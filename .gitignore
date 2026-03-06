@@ -1,0 +1,67 @@
+# --- System & OS ---
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# --- Python & Google Colab ---
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+.env
+
+# --- C/C++ (Software/Firmware cho RISC-V) ---
+*.o
+*.obj
+*.elf
+*.bin
+*.hex
+*.map
+*.dis
+/software/build/
+
+# --- Verilog/SystemVerilog Simulation (Icarus, Verilator, Questa) ---
+*.log
+*.vcd
+*.ghw
+*.fst
+*.bak
+work/
+obj_dir/
+transcript
+vsim.wlf
+
+# --- VLSI Backend (General EDA Tools) ---
+# Loại bỏ các file log và temp của Cadence/Synopsys/OpenRoad
+*.history
+*.jou
+*.log.*
+*.key
+*.cmd
+*.options
+*.status
+extLogDir/
+fv/
+layout/
+
+# --- Tránh đẩy các file vật lý cực nặng (GDSII, OASIS, LIB, LEF) ---
+# Những file này nên lưu ở Drive cục bộ hoặc dùng Git LFS nếu cần thiết
+*.gds
+*.oas
+*.lib
+*.db
+*.lef
+*.def
+*.spef
+*.sdf
+
+# --- Xilinx Vivado (Nếu dùng FPGA Xilinx) ---
+.Xil/
+*.jou
+*.log
+*.pb
+*.str
+*.dir/
+*.gen/
+/vivado_project/
