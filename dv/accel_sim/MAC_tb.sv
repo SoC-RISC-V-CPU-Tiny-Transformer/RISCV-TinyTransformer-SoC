@@ -18,7 +18,7 @@ module MAC_tb();
     logic signed [DATA_WIDTH-1:0] out_8bit;
 
     // Khởi tạo thực thể (Instantiate) khối MAC cần test
-    MAC #(
+    MultAndAcc #(
         .DATA_WIDTH(DATA_WIDTH),
         .ACC_WIDTH(ACC_WIDTH)
     ) uut (
@@ -39,7 +39,6 @@ module MAC_tb();
         forever #5 clk = ~clk; 
     end
 
-    // Kịch bản kiểm thử
     initial begin
         rst_n = 0;
         valid_in = 0;
@@ -48,7 +47,6 @@ module MAC_tb();
         in_a = 0;
         in_b = 0;
 
-        // Chờ 20ns rồi tắt Reset
         #20;
         rst_n = 1;
         #10;
@@ -104,7 +102,7 @@ module MAC_tb();
         @(posedge clk);
         clear_acc = 1;
         valid_in = 1;
-        shift_amount = 3'd2; // Dịch phải 2 bit (tức là chia cho 4)
+        shift_amount = 3'd2; // Dịch phải 2 bit
         in_a = 8'd64; in_b = 8'd2; // Tích = 128. Sau khi dịch 2 bit kì vọng = 32.
         
         @(posedge clk);
@@ -118,7 +116,6 @@ module MAC_tb();
         $finish;
     end
 
-    // Giám sát kết quả đầu ra (Monitor)
     always @(posedge clk) begin
         if (valid_out) begin
             $display("-> [Ket qua tai %0t] valid_out = 1 | out_8bit = %d", $time, out_8bit);

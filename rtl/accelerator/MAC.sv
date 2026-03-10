@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module MAC #(
+module MultAndAcc #(
     parameter DATA_WIDTH = 8,
     parameter ACC_WIDTH = 32
 ) (
@@ -32,7 +32,7 @@ module MAC #(
     end
     
     // --- STAGE 2: ACCUMULATE ---
-    logic signed [ACC_WIDTH-1:0] acc_reg;   // Extra bit for overflow detection
+    logic signed [ACC_WIDTH-1:0] acc_reg;
     logic v2;
     logic clear_reg;
 
@@ -57,7 +57,7 @@ module MAC #(
         end
     end    
 
-    // --- STAGE 3: SHIFT & SATURATION (Combinational) ---
+    // --- STAGE 3: SHIFT & SATURATION ---
     logic signed [ACC_WIDTH-1:0] shifted_acc;
 
     always_comb begin
