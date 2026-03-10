@@ -5,7 +5,7 @@ module MAC #(
     parameter ACC_WIDTH = 32
 ) (
     input  logic                         clk,
-    input  logic                         rst,        // Synchronous reset, active high
+    input  logic                         rst_n,        // Synchronous reset, active low
     input  logic                         valid_in,
     input  logic                         clear_acc,  // Delete accumulator 0
     input  logic [2:0]                   shift_amount, // Fractional bits
@@ -21,7 +21,7 @@ module MAC #(
     logic v1;
 
     always_ff @(posedge clk) begin
-        if (rst) begin
+        if (!rst_n) begin
             mult_reg <= '0;
             v1 <= 1'b0;
         end
@@ -37,7 +37,7 @@ module MAC #(
     logic clear_reg;
 
     always_ff @(posedge clk) begin
-        if (rst) begin
+        if (!rst_n) begin
             acc_reg <= '0;
             v2 <= 1'b0;
             clear_reg <= 1'b0;

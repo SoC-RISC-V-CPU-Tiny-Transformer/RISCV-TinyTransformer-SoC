@@ -1,13 +1,13 @@
 `timescale 1ns / 1ps
 
-module tb_MAC();
+module MAC_tb();
 
     parameter DATA_WIDTH = 8;
     parameter ACC_WIDTH = 32;
 
     // Khai báo các tín hiệu kết nối với module MAC
     logic                         clk;
-    logic                         rst;
+    logic                         rst_n;
     logic                         valid_in;
     logic                         clear_acc;
     logic [2:0]                   shift_amount;
@@ -23,7 +23,7 @@ module tb_MAC();
         .ACC_WIDTH(ACC_WIDTH)
     ) uut (
         .clk(clk),
-        .rst(rst),
+        .rst_n(rst_n),
         .valid_in(valid_in),
         .clear_acc(clear_acc),
         .shift_amount(shift_amount),
@@ -41,7 +41,7 @@ module tb_MAC();
 
     // Kịch bản kiểm thử
     initial begin
-        rst = 1;
+        rst_n = 0;
         valid_in = 0;
         clear_acc = 0;
         shift_amount = 3'd0;
@@ -50,7 +50,7 @@ module tb_MAC();
 
         // Chờ 20ns rồi tắt Reset
         #20;
-        rst = 0;
+        rst_n = 1;
         #10;
 
         $display("========== BAT DAU MO PHONG ==========");
