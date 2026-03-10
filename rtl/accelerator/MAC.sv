@@ -20,7 +20,7 @@ module MultAndAcc #(
     logic signed [PROD_WIDTH-1:0] mult_reg; // Stage 1: full multiply result
     logic v1;
 
-    always_ff @(posedge clk) begin
+    always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             mult_reg <= '0;
             v1 <= 1'b0;
@@ -36,7 +36,7 @@ module MultAndAcc #(
     logic v2;
     logic clear_reg;
 
-    always_ff @(posedge clk) begin
+    always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             acc_reg <= '0;
             v2 <= 1'b0;
