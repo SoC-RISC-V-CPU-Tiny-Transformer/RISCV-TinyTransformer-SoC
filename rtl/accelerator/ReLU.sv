@@ -1,13 +1,13 @@
 `timescale 1ns / 1ps
 
-module ReLU #(parameter int DATA_W  = 8, parameter int SEQ_LEN = 4) (
+module ReLU #(parameter int DATA_W  = 8, parameter int ARRAY_SIZE = 4) (
   input  logic                                       clk,
   input  logic                                       rst_n,
 
-  input  logic signed [SEQ_LEN-1:0][DATA_W-1:0]      x_in,
+  input  logic signed [ARRAY_SIZE-1:0][DATA_W-1:0]      x_in,
   input  logic                                       x_valid, 
 
-  output logic signed [SEQ_LEN-1:0][DATA_W-1:0]      relu_out,
+  output logic signed [ARRAY_SIZE-1:0][DATA_W-1:0]      relu_out,
   output logic                                       relu_valid
 );
 
@@ -19,7 +19,7 @@ module ReLU #(parameter int DATA_W  = 8, parameter int SEQ_LEN = 4) (
       relu_valid <= x_valid;
 
       if (x_valid) begin
-        for (int i = 0; i < SEQ_LEN; i++) begin
+        for (int i = 0; i < ARRAY_SIZE; i++) begin
           if (x_in[i][DATA_W-1]) relu_out[i] <= '0;       // Negative -> 0
           else                   relu_out[i] <= x_in[i];  // 
         end

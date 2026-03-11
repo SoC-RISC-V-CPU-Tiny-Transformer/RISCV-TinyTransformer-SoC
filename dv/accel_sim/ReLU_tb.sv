@@ -3,21 +3,21 @@
 module ReLU_tb;
 
   parameter int DATA_W  = 8;
-  parameter int SEQ_LEN = 4;
+  parameter int ARRAY_SIZE = 4;
 
   logic                                       clk;
   logic                                       rst_n;
 
-  logic signed [SEQ_LEN-1:0][DATA_W-1:0]      x_in;
+  logic signed [ARRAY_SIZE-1:0][DATA_W-1:0]      x_in;
   logic                                       x_valid;
 
-  logic signed [SEQ_LEN-1:0][DATA_W-1:0]      relu_out;
+  logic signed [ARRAY_SIZE-1:0][DATA_W-1:0]      relu_out;
   logic                                       relu_valid;
 
   // Instantiate DUT
   ReLU #(
     .DATA_W(DATA_W),
-    .SEQ_LEN(SEQ_LEN)
+    .ARRAY_SIZE(ARRAY_SIZE)
   ) dut (
     .clk       (clk),
     .rst_n     (rst_n),
@@ -78,7 +78,7 @@ module ReLU_tb;
     $finish;
   end
 
-  task send_array(input logic signed [SEQ_LEN-1:0][DATA_W-1:0] data_array);
+  task send_array(input logic signed [ARRAY_SIZE-1:0][DATA_W-1:0] data_array);
     begin
       @(posedge clk);
       #1; 
