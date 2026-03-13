@@ -1,6 +1,6 @@
 # RISC-V & Tiny Transformer SoC
 
-**Trạng thái:** 🚧 Work in Progress (Đang hoàn thiện RTL & Verification)
+**Trạng thái:** Work in Progress (Đang hoàn thiện RTL & Verification)
 
 Đây là repository chứa mã nguồn mô tả phần cứng (RTL) được viết bằng SystemVerilog cho dự án System-on-Chip (SoC). Hệ thống là sự tích hợp giữa một lõi vi xử lý RISC-V và một bộ gia tốc AI chuyên dụng (Tiny Transformer Accelerator). 
 
@@ -8,7 +8,7 @@ Dự án này được nhóm phát triển với mục tiêu hướng tới các
 
 ---
 
-## 🏗 Kiến trúc Hệ thống (System Architecture)
+##  Kiến trúc Hệ thống (System Architecture)
 
 Hệ thống bao gồm hai thành phần cốt lõi đang được phát triển và kiểm tra song song:
 
