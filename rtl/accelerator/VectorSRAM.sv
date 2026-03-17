@@ -2,7 +2,7 @@
 
 module VectorSRAM #(
     parameter DATA_WIDTH = 8,
-    parameter ARRAY_SIZE = 4,
+    parameter ARRAY_SIZE = 8,
     parameter ADDR_WIDTH = 10 // Độ sâu 1024 ô nhớ (mỗi ô chứa 4 phần tử 8-bit)
 ) (
     input logic clk,

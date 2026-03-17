@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 
-module TransposeBuffer_tb();
+module Transposer_tb();
 
     parameter DATA_WIDTH = 8;
     parameter ARRAY_SIZE = 4;
