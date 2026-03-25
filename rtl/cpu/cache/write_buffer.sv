@@ -76,29 +76,30 @@ module write_buffer
     assign empty = ptr_idx_eq && (head[WB_PTR_BITS] == tail[WB_PTR_BITS]);
     assign wb_full = ptr_idx_eq && (head[WB_PTR_BITS] != tail[WB_PTR_BITS]);
 
-    //FIFO Push and Pop
+    //FIFO control: head/tail/valid with async reset
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             head        <= '0;
             tail        <= '0;
             entry_valid <= '0;
         end else begin
-            //push
             if (push && !wb_full) begin
                 entry_valid[tail_idx] <= 1'b1;
-                entry_addr [tail_idx] <= push_addr;
-                entry_data [tail_idx] <= push_data;
-                entry_strb [tail_idx] <= push_strb;
-
                 tail <= tail + 1'b1;
             end
-
-            //pop
             if (arb_wr_done && !empty) begin
                 entry_valid[head_idx] <= 1'b0;
-
                 head <= head + 1'b1;
             end
+        end
+    end
+
+    //FIFO data storage: no async reset, allows DRAM inference
+    always_ff @(posedge clk) begin
+        if (push && !wb_full) begin
+            entry_addr[tail_idx] <= push_addr;
+            entry_data[tail_idx] <= push_data;
+            entry_strb[tail_idx] <= push_strb;
         end
     end
 

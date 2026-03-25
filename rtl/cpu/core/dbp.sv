@@ -66,31 +66,33 @@ module dbp
     assign ex_pc_idx = ex_pc[11:2];
     assign ex_pc_tag = ex_pc[31:12];
 
+    //control path: only btb_valid needs async reset
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            for (int i = 0; i < BP_ENTRIES; i++) 
-                bht[i]  <= WEAKLY_NT; 
-
-            btb_valid   <= '0;
+            btb_valid <= '0;
         end else begin
-            //neu la lenh branch
-            if (ex_update_en) begin
-                //BHT update
-                //saturate. not wrap
-                if (ex_actual_taken) begin
-                    if (bht[ex_pc_idx] != STRONGLY_T)
-                        bht[ex_pc_idx]  <= bht[ex_pc_idx] + 1;
-                end else begin
-                    if (bht[ex_pc_idx] != STRONGLY_NT)
-                        bht[ex_pc_idx]  <= bht[ex_pc_idx] - 1;
-                end
+            if (ex_update_en && ex_actual_taken)
+                btb_valid[ex_pc_idx] <= 1'b1;
+        end
+    end
 
-                //BTB update
-                if (ex_actual_taken) begin
-                    btb_valid[ex_pc_idx]    <= 1'b1;
-                    btb_target[ex_pc_idx]   <= ex_actual_target;
-                    btb_tag[ex_pc_idx]      <= ex_pc_tag;
-                end
+    //data path: bht/btb_target/btb_tag — no async reset, allows LUTRAM inference
+    //bht initializes to 0 (STRONGLY_NT) in hardware; predictor trains from there
+    always_ff @(posedge clk) begin
+        if (ex_update_en) begin
+            //BHT: saturating counter update
+            if (ex_actual_taken) begin
+                if (bht[ex_pc_idx] != STRONGLY_T)
+                    bht[ex_pc_idx] <= bht[ex_pc_idx] + 1'b1;
+            end else begin
+                if (bht[ex_pc_idx] != STRONGLY_NT)
+                    bht[ex_pc_idx] <= bht[ex_pc_idx] - 1'b1;
+            end
+
+            //BTB: only write when taken
+            if (ex_actual_taken) begin
+                btb_target[ex_pc_idx] <= ex_actual_target;
+                btb_tag[ex_pc_idx]    <= ex_pc_tag;
             end
         end
     end
