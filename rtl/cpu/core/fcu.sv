@@ -50,7 +50,8 @@ module fcu
     //IF_ID Pipeline inteface
     output logic [DATA_WIDTH-1:0]   instr_o,
     output logic [ADDR_WIDTH-1:0]   if_id_pc,
-    output logic                    if_id_pred_taken
+    output logic                    if_id_pred_taken,
+    output logic [ADDR_WIDTH-1:0]   if_id_pred_target
 );
     //PC Control
     logic [ADDR_WIDTH-1:0] pc_reg;
@@ -86,5 +87,6 @@ module fcu
     //output to IF_ID Pipeline
     assign instr_o          = instr_i;
     assign if_id_pc         = pc_reg;
-    assign if_id_pred_taken = ex_mispredict ? 1'b0 : pred_taken;
+    assign if_id_pred_taken  = ex_mispredict ? 1'b0  : pred_taken;
+    assign if_id_pred_target = ex_mispredict ? '0    : pred_target;
 endmodule
