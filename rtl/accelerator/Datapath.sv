@@ -3,178 +3,257 @@
 module Datapath #(
     parameter DATA_WIDTH = 8,
     parameter ACC_WIDTH = 32,
-    parameter ARRAY_SIZE = 4,
-    parameter ADDR_WIDTH = 10,
-    parameter ROW_WIDTH = 2
+    parameter ARRAY_SIZE = 8,
+    parameter MAT_SIZE = 64,
+    parameter ADDR_WIDTH = 9,
+    parameter NUM_HEADS = 3
 ) (
     input logic clk,
     input logic rst_n,
 
-    // --- CÁC TÍN HIỆU ĐIỀU KHIỂN TỪ FSM (Controller) ---
-    // 1. Điều khiển input X và residual
-    input logic residual_we,
-    input logic [ADDR_WIDTH-1:0] residual_waddr,
-    input logic [ADDR_WIDTH-1:0] residual_raddr,
+    input logic start_matmul,
+    input logic transpose_mode,
+    input logic [$clog2(ACC_WIDTH)-1:0] shift_amount,
+    input logic multi_head,
 
-    // 2. Điều khiển weight W với DMA (Ping-Pong 2 sram)
-    input logic w_a_we, w_b_we,
-    input logic [ADDR_WIDTH-1:0] w_a_waddr, w_b_waddr,
-    input logic [ADDR_WIDTH-1:0] w_a_raddr, w_b_raddr,
+    // MUX ĐẦU VÀO: 0=SRAM_X, 1=SRAM_0, 2=SRAM_1, 3=SRAM_2, 4=SRAM_3
+    input logic [2:0] sel_in_a, sel_in_b,
+    
+    // DEMUX ĐẦU RA
+    input logic we_sram_x, we_sram_0, we_sram_1, we_sram_2, we_sram_3,
 
-    // 3. Điều khiển workinng buffers
-    input logic [3:0] buf_we,
-    input logic [ADDR_WIDTH-1:0] buf_waddr [0:3],
-    input logic [ADDR_WIDTH-1:0] buf_raddr [0:3],
-
-    // 4. MUX điều khiển input cho MMU
-    input logic [2:0] mux_sel_mmu_in_a,
-    input logic [2:0] mux_sel_mmu_in_b,
-
-    // 5. Điều khiển MMU và Transpose
-    input logic mmu_valid_in, mmu_clear_acc,
-    input logic [2:0] mmu_shift_amount,
-    input logic [ROW_WIDTH-1:0] mmu_out_row_idx,
-    input logic trans_load_en,
-    input logic sel_trans_buf,
-    input logic [ROW_WIDTH-1:0] trans_row_idx, trans_col_idx,
-    input logic mux_sel_buf_wdata, // 0 = Ghi thẳng từ MMU, 1 = Ghi từ Transpose Buffer
-
-    // --- DỮ LIỆU ĐƯỢC TRUYỀN TỪ RAM VÀO THÔNG QUA BUS ---
-    input logic [DATA_WIDTH-1:0] ext_wdata [ARRAY_SIZE-1:0],
-    output logic mmu_valid_out [ARRAY_SIZE-1:0][ARRAY_SIZE-1:0]
+    output logic stage_done
 );
-    // --- KHỞI TẠO BỘ NHỚ CHO DỮ LIỆU ĐẦU VÀO X VÀ RESIDUAL ---
-    logic signed [DATA_WIDTH-1:0] residual_rdata [ARRAY_SIZE-1:0];
-    VectorSRAM #(
-        .DATA_WIDTH(DATA_WIDTH),
-        .ARRAY_SIZE(ARRAY_SIZE),
-        .ADDR_WIDTH(ADDR_WIDTH)
-    ) sram_residual (
-        .clk(clk),
-        .we(residual_we), .waddr(residual_waddr), .wdata(ext_wdata), // Ghi dữ liệu từ ngoài vào sram_input
-        .re(1'b1), .raddr(residual_raddr), .rdata(residual_rdata)
-    );
+    localparam NUM_BLOCKS = MAT_SIZE / ARRAY_SIZE;
 
-    // --- KHỞI TẠO BỘ NHỚ CHO 2 SRAM PING-PONG ---
-    logic signed [DATA_WIDTH-1:0] w_a_rdata [ARRAY_SIZE-1:0];
-    VectorSRAM #(
-        .DATA_WIDTH(DATA_WIDTH),
-        .ARRAY_SIZE(ARRAY_SIZE),
-        .ADDR_WIDTH(ADDR_WIDTH)
-    ) sram_w_a (
-        .clk(clk),
-        .we(w_a_we), .waddr(w_a_waddr), .wdata(ext_wdata), // Ghi dữ liệu từ ngoài vào
-        .re(1'b1), .raddr(w_a_raddr), .rdata(w_a_rdata)
-    );
+    // ==========================================
+    // CHOOSE IN_A AND IN_B FROM SRAM
+    // ==========================================
+    logic signed [DATA_WIDTH-1:0] rdata_x [ARRAY_SIZE-1:0];
+    logic signed [DATA_WIDTH-1:0] rdata_0 [ARRAY_SIZE-1:0];
+    logic signed [DATA_WIDTH-1:0] rdata_1 [ARRAY_SIZE-1:0];
+    logic signed [DATA_WIDTH-1:0] rdata_2 [ARRAY_SIZE-1:0];
+    logic signed [DATA_WIDTH-1:0] rdata_3 [ARRAY_SIZE-1:0];
 
-    logic signed [DATA_WIDTH-1:0] w_b_rdata [ARRAY_SIZE-1:0];
-    VectorSRAM #(
-        .DATA_WIDTH(DATA_WIDTH),
-        .ARRAY_SIZE(ARRAY_SIZE),
-        .ADDR_WIDTH(ADDR_WIDTH)
-    ) sram_w_b (
-        .clk(clk),
-        .we(w_b_we), .waddr(w_b_waddr), .wdata(ext_wdata), // Ghi dữ liệu từ ngoài vào
-        .re(1'b1), .raddr(w_b_raddr), .rdata(w_b_rdata)
-    );
+    logic signed [DATA_WIDTH-1:0] matmul_in_a [ARRAY_SIZE-1:0];
+    logic signed [DATA_WIDTH-1:0] matmul_in_b [ARRAY_SIZE-1:0];
 
-    // --- KHỞI TẠO BỘ NHỚ CHO WORKING BUFFERS (B0, B1, B2, B3) ---
-    logic signed [DATA_WIDTH-1:0] common_wdata [ARRAY_SIZE-1:0];
-    logic signed [DATA_WIDTH-1:0] buf_rdata [0:3][ARRAY_SIZE-1:0];
-    genvar i;
-    generate
-        for(i = 0; i < 4; i++) begin: working_buffers
-            VectorSRAM #(
-            .DATA_WIDTH(DATA_WIDTH),
-            .ARRAY_SIZE(ARRAY_SIZE),
-            .ADDR_WIDTH(ADDR_WIDTH)
-            ) sram_buf (
-                .clk(clk),
-                .we(buf_we[i]), .waddr(buf_waddr[i]), .wdata(common_wdata),
-                .re(1'b1), .raddr(buf_raddr[i]), .rdata(buf_rdata[i])
-            );
-        end
-    endgenerate
-
-    // --- CHỌN LUỒNG DỮ LIỆU ĐẦU VÀO CHO MMU ---
-    logic signed [DATA_WIDTH-1:0] mmu_in_a [ARRAY_SIZE-1:0];
-    logic signed [DATA_WIDTH-1:0] mmu_in_b [ARRAY_SIZE-1:0];
     always_comb begin
-        case (mux_sel_mmu_in_a)
-            3'd0: mmu_in_a = residual_rdata; // Đọc input gốc
-            3'd1: mmu_in_a = buf_rdata[0]; // Đọc B0
-            3'd2: mmu_in_a = buf_rdata[1]; // Đọc B1
-            3'd3: mmu_in_a = buf_rdata[2]; // Đọc B2
-            3'd4: mmu_in_a = buf_rdata[3]; // Đọc B3
-            default: for(int j = 0; j < ARRAY_SIZE; j++) mmu_in_a[j] = '0;
+        case(sel_in_a) 
+            3'd0: matmul_in_a = rdata_x;
+            3'd1: matmul_in_a = rdata_0;
+            3'd2: matmul_in_a = rdata_1;
+            3'd3: matmul_in_a = rdata_2;
+            3'd4: matmul_in_a = rdata_3;
+            default: matmul_in_a = '{default: '0};
+        endcase
+
+        case(sel_in_b) 
+            3'd0: matmul_in_b = rdata_x;
+            3'd1: matmul_in_b = rdata_0;
+            3'd2: matmul_in_b = rdata_1;
+            3'd3: matmul_in_b = rdata_2;
+            3'd4: matmul_in_b = rdata_3;
+            default: matmul_in_b = '{default: '0};
         endcase
     end
 
+    // ==========================================
+    // MATRIX MULTIPLIER
+    // ==========================================
+    logic read_req_a, read_req_b;
+    logic [ADDR_WIDTH-1:0] read_addr_a, read_addr_b;
+
+    logic matmul_valid_out;
+    logic [$clog2(ARRAY_SIZE)-1:0] matmul_out_row_idx;
+    logic signed [DATA_WIDTH-1:0] matmul_out_data [ARRAY_SIZE-1:0];
+    logic [$clog2(ARRAY_SIZE)-1:0] matmul_out_br, matmul_out_bc;
+
+    MatMul #(
+        .DATA_WIDTH(DATA_WIDTH), .ACC_WIDTH(ACC_WIDTH),
+        .ARRAY_SIZE(ARRAY_SIZE), .MAT_SIZE(MAT_SIZE), .ADDR_WIDTH(ADDR_WIDTH),
+        .NUM_HEADS(NUM_HEADS)
+    ) matmul_core (
+        .clk(clk),
+        .rst_n(rst_n),
+        .start(start_matmul),
+        .transpose_mode(transpose_mode),
+        .shift_amount(shift_amount),
+        .multi_head(multi_head),
+        .done(),
+        .read_req_a(read_req_a), .read_addr_a(read_addr_a), .read_data_a(matmul_in_a),
+        .read_req_b(read_req_b), .read_addr_b(read_addr_b), .read_data_b(matmul_in_b),
+        .valid_out(matmul_valid_out),
+        .out_row_idx(matmul_out_row_idx),
+        .out_data(matmul_out_data),
+        .out_br(matmul_out_br),
+        .out_bc(matmul_out_bc)
+    );
+
+    // ==========================================
+    // SRAM READ ENABLE SIGNAL
+    // ==========================================
+    logic re_sram_x, re_sram_0, re_sram_1, re_sram_2, re_sram_3;
+    logic [ADDR_WIDTH-1:0] raddr_x, raddr_0, raddr_1, raddr_2, raddr_3;
+
     always_comb begin
-        case (mux_sel_mmu_in_b)
-            3'd0: mmu_in_b = w_a_rdata; // Trọng số Bank A
-            3'd1: mmu_in_b = w_b_rdata; // Trọng số Bank B
-            3'd2: mmu_in_b = buf_rdata[0]; // Đọc B0
-            3'd3: mmu_in_b = buf_rdata[1]; // Đọc B1
-            3'd4: mmu_in_b = buf_rdata[2]; // Đọc B2
-            3'd5: mmu_in_b = buf_rdata[3]; // Đọc B3
-            default: for(int j = 0; j < ARRAY_SIZE; j++) mmu_in_b[j] = '0;
-        endcase
+        re_sram_x = 0; re_sram_0 = 0; re_sram_1 = 0; re_sram_2 = 0; re_sram_3 = 0;
+        raddr_x = '0; raddr_0 = '0; raddr_1 = '0; raddr_2 = '0; raddr_3 = '0;
+
+        if(read_req_a) begin
+            case(sel_in_a)
+                3'd0: begin
+                    re_sram_x = 1;
+                    raddr_x = read_addr_a;
+                end
+                3'd1: begin
+                    re_sram_0 = 1;
+                    raddr_0 = read_addr_a;
+                end
+                3'd2: begin
+                    re_sram_1 = 1;
+                    raddr_1 = read_addr_a;
+                end
+                3'd3: begin
+                    re_sram_2 = 1;
+                    raddr_2 = read_addr_a;
+                end
+                3'd4: begin
+                    re_sram_3 = 1;
+                    raddr_3 = read_addr_a;
+                end
+            endcase
+        end
+
+        if(read_req_b) begin
+            case(sel_in_b)
+                3'd0: begin
+                    re_sram_x = 1;
+                    raddr_x = read_addr_b;
+                end
+                3'd1: begin
+                    re_sram_0 = 1;
+                    raddr_0 = read_addr_b;
+                end
+                3'd2: begin
+                    re_sram_1 = 1;
+                    raddr_1 = read_addr_b;
+                end
+                3'd3: begin
+                    re_sram_2 = 1;
+                    raddr_2 = read_addr_b;
+                end
+                3'd4: begin
+                    re_sram_3 = 1;
+                    raddr_3 = read_addr_b;
+                end
+            endcase
+        end
     end
 
-    // --- LÕI MMU ---
-    logic signed [DATA_WIDTH-1:0] mmu_out_matrix [ARRAY_SIZE-1:0][ARRAY_SIZE-1:0];
-    MatrixMultUnit #(
+    // ==========================================
+    // TRANSPOSER
+    // ==========================================
+    logic [$clog2(ARRAY_SIZE)-1:0] trans_out_br, trans_out_bc;
+    logic trans_valid_out;
+    logic [$clog2(ARRAY_SIZE)-1:0] trans_col_idx;
+    logic signed [DATA_WIDTH-1:0] trans_col_data [ARRAY_SIZE-1:0];
+
+    Transposer #(
         .DATA_WIDTH(DATA_WIDTH),
-        .ACC_WIDTH(ACC_WIDTH),
-        .ARRAY_SIZE(ARRAY_SIZE)
-    ) mmu (
+        .ARRAY_SIZE(ARRAY_SIZE),
+        .MAT_SIZE(MAT_SIZE)
+    ) transposer_core (
         .clk(clk), .rst_n(rst_n),
-        .valid_in(mmu_valid_in), .clear_acc(mmu_clear_acc), .shift_amount(mmu_shift_amount),
-        .in_a(mmu_in_a), .in_b(mmu_in_b),
-        .out_matrix(mmu_out_matrix), .valid_out(mmu_valid_out)
+        .valid_in(matmul_valid_out), .in_row_idx(matmul_out_row_idx), .in_row_data(matmul_out_data),
+        .in_br(matmul_out_br), .in_bc(matmul_out_bc),
+        .out_br(trans_out_br), .out_bc(trans_out_bc),
+        .valid_out(trans_valid_out), .out_col_idx(trans_col_idx), .out_col_data(trans_col_data)
     );
 
-    // Trích xuất 1 hàng từ MMU
-    logic signed [DATA_WIDTH-1:0] mmu_out_row [ARRAY_SIZE-1:0];
+    // ==========================================
+    // SRAM WRITE ENABLE SIGNAL
+    // ==========================================
+    logic write_valid;
+    logic [ADDR_WIDTH-1:0] waddr;
+    logic signed [DATA_WIDTH-1:0] wdata [ARRAY_SIZE-1:0];
     always_comb begin
-        for(int k = 0; k < ARRAY_SIZE; k++) begin
-            mmu_out_row[k] = mmu_out_matrix[mmu_out_row_idx][k];
+        if(transpose_mode) begin
+            write_valid = trans_valid_out;
+            waddr = (trans_out_bc * ARRAY_SIZE + trans_col_idx) * NUM_BLOCKS + trans_out_br;
+            wdata = trans_col_data;
+        end
+        else begin
+            write_valid = matmul_valid_out;
+            waddr = (matmul_out_br * ARRAY_SIZE + matmul_out_row_idx) * NUM_BLOCKS + matmul_out_bc;
+            wdata = matmul_out_data;
         end
     end
 
-    // --- TRANSPOSE BUFFER & GHI RA WORKING BUFFERS ---
-    logic signed [DATA_WIDTH-1:0] trans_buf_out_0 [ARRAY_SIZE-1:0];
-    logic signed [DATA_WIDTH-1:0] trans_buf_out_1 [ARRAY_SIZE-1:0];
-
-    TransposeBuffer #(
-        .DATA_WIDTH(DATA_WIDTH), .ARRAY_SIZE(ARRAY_SIZE)
-    ) trans_buf_0 (
-        .clk(clk), .rst_n(rst_n),
-        .trans_load_en(trans_load_en && (sel_trans_buf == 1'b0)), 
-        .trans_row_idx(trans_row_idx), .trans_col_idx(trans_col_idx),
-        .data_in(mmu_out_row),
-        .data_out(trans_buf_out_0)
-    );
-
-    TransposeBuffer #(
-        .DATA_WIDTH(DATA_WIDTH), .ARRAY_SIZE(ARRAY_SIZE)
-    ) trans_buf_1 (
-        .clk(clk), .rst_n(rst_n),
-        .trans_load_en(trans_load_en && (sel_trans_buf == 1'b1)), 
-        .trans_row_idx(trans_row_idx), .trans_col_idx(trans_col_idx),
-        .data_in(mmu_out_row),
-        .data_out(trans_buf_out_1)
-    );
-
-    // MUX quyết định cái gì sẽ được ghi vào 4 Working Buffers
-    always_comb begin
-        if (mux_sel_buf_wdata) begin
-            if(sel_trans_buf == 1'b0) common_wdata = trans_buf_out_1; // Ghi ma trận lật K^T
-            else common_wdata = trans_buf_out_0;
-        end
-        else 
-            common_wdata = mmu_out_row;   // Ghi ma trận Q, V, Score bình thường
+    // ==========================================
+    // STAGE DONE
+    // ==========================================
+    logic [ADDR_WIDTH:0] write_counter;
+    always_ff @(posedge clk) begin
+        if(start_matmul)
+            write_counter <= 0;
+        else if(write_valid)
+            write_counter <= write_counter + 1;
     end
+
+    assign stage_done = write_valid && (write_counter == (MAT_SIZE * ARRAY_SIZE - 1));
+
+    // ==========================================
+    // INSTANTIATION SRAM
+    // ==========================================
+    VectorSRAM #(
+        .DATA_WIDTH(DATA_WIDTH),
+        .ARRAY_SIZE(ARRAY_SIZE),
+        .ADDR_WIDTH(ADDR_WIDTH)
+    ) sram_x (
+        .clk(clk),
+        .we(write_valid && we_sram_x), .waddr(waddr), .wdata(wdata),
+        .re(re_sram_x), .raddr(raddr_x), .rdata(rdata_x)
+    );
+
+    VectorSRAM #(
+        .DATA_WIDTH(DATA_WIDTH),
+        .ARRAY_SIZE(ARRAY_SIZE),
+        .ADDR_WIDTH(ADDR_WIDTH)
+    ) sram_0 (
+        .clk(clk),
+        .we(write_valid && we_sram_0), .waddr(waddr), .wdata(wdata),
+        .re(re_sram_0), .raddr(raddr_0), .rdata(rdata_0)
+    );
+
+    VectorSRAM #(
+        .DATA_WIDTH(DATA_WIDTH),
+        .ARRAY_SIZE(ARRAY_SIZE),
+        .ADDR_WIDTH(ADDR_WIDTH)
+    ) sram_1 (
+        .clk(clk),
+        .we(write_valid && we_sram_1), .waddr(waddr), .wdata(wdata),
+        .re(re_sram_1), .raddr(raddr_1), .rdata(rdata_1)
+    );
+
+        VectorSRAM #(
+        .DATA_WIDTH(DATA_WIDTH),
+        .ARRAY_SIZE(ARRAY_SIZE),
+        .ADDR_WIDTH(ADDR_WIDTH)
+    ) sram_2 (
+        .clk(clk),
+        .we(write_valid && we_sram_2), .waddr(waddr), .wdata(wdata),
+        .re(re_sram_2), .raddr(raddr_2), .rdata(rdata_2)
+    );
+
+        VectorSRAM #(
+        .DATA_WIDTH(DATA_WIDTH),
+        .ARRAY_SIZE(ARRAY_SIZE),
+        .ADDR_WIDTH(ADDR_WIDTH)
+    ) sram_3 (
+        .clk(clk),
+        .we(write_valid && we_sram_3), .waddr(waddr), .wdata(wdata),
+        .re(re_sram_3), .raddr(raddr_3), .rdata(rdata_3)
+    );
 
 endmodule

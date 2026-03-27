@@ -3,7 +3,7 @@
 module VectorSRAM #(
     parameter DATA_WIDTH = 8,
     parameter ARRAY_SIZE = 8,
-    parameter ADDR_WIDTH = 10 // Độ sâu 1024 ô nhớ (mỗi ô chứa 4 phần tử 8-bit)
+    parameter ADDR_WIDTH = 9 // Độ sâu 512 ô nhớ (mỗi ô chứa 8 phần tử 8-bit)
 ) (
     input logic clk,
     
@@ -20,7 +20,6 @@ module VectorSRAM #(
 
     localparam DEPTH = 1 << ADDR_WIDTH;
     
-    // Khai báo bộ nhớ
     logic signed [DATA_WIDTH-1:0] ram [DEPTH-1:0][ARRAY_SIZE-1:0];
 
     always_ff @(posedge clk) begin
