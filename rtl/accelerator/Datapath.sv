@@ -6,7 +6,7 @@ module Datapath #(
     parameter ARRAY_SIZE = 8,
     parameter MAT_SIZE = 64,
     parameter ADDR_WIDTH = 9,
-    parameter NUM_HEADS = 3
+    parameter NUM_HEADS = 2
 ) (
     input logic clk,
     input logic rst_n,

@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module tb_VectorSRAM();
+module VectorSRAM_tb();
 
     localparam DATA_WIDTH = 8;
     localparam ARRAY_SIZE = 4;

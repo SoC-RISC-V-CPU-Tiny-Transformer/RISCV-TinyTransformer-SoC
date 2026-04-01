@@ -22,14 +22,12 @@ module MAC_tb();
         .* // Tự động nối các port cùng tên
     );
 
-    // Clock Generation: T = 10ns
     initial begin
         clk = 0;
         forever #5 clk = ~clk;
     end
 
     initial begin
-        // --- System Reset ---
         rst_n = 0;
         in_a = 0; in_b = 0;
         valid_in = 0; acc_clear = 0;
@@ -39,42 +37,32 @@ module MAC_tb();
         @(negedge clk);
         rst_n = 1;
 
-        // --- Normal MAC Operation ---
         $display("--- TEST CASE 1: Normal MAC ---");
-        // Cycle 1: MAC 1 - Khởi động mẻ mới, BẮT BUỘC acc_clear = 1
         @(negedge clk);
         in_a = 10; in_b = 2; valid_in = 1; acc_clear = 1; shift_amount = 0;
 
-        // Cycle 2: MAC 2 - Tiếp tục cộng dồn, acc_clear = 0
         @(negedge clk);
         in_a = -5; in_b = 3; valid_in = 1; acc_clear = 0;
 
-        // --- Invalid Data Handling ---
-        // Cycle 3: Data toggles but valid_in is low. 
         @(negedge clk);
         in_a = 100; in_b = 2; valid_in = 0; 
 
-        // Cycle 4: Trút mẻ 1 để kiểm tra kết quả (Tổng phải là 10*2 - 5*3 = 5)
         @(negedge clk);
         in_a = 0; in_b = 0; valid_in = 0; acc_clear = 1;
         
         @(negedge clk);
         acc_clear = 0;
 
-        // --- Datapath Saturation & Bit Shifting ---
         $display("--- TEST CASE 2: Shift and Saturation ---");
-        // Khởi động mẻ 2 (acc_clear = 1) với giá trị cực lớn để test tràn số
         @(negedge clk);
         in_a = 100; in_b = 10; valid_in = 1; acc_clear = 1; shift_amount = 3;
         
-        // Trút mẻ 2 ngay lập tức
         @(negedge clk);
         in_a = 0; in_b = 0; valid_in = 0; acc_clear = 1; 
 
         @(negedge clk);
         acc_clear = 0;
 
-        // Wait for pipeline to flush
         repeat(3) @(negedge clk);
 
         $display("--- TEST COMPLETED ---");

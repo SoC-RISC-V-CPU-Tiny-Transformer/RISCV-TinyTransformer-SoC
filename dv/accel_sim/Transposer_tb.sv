@@ -33,13 +33,11 @@ module Transposer_tb();
         .valid_out(valid_out), .out_col_idx(out_col_idx), .out_col_data(out_col_data)
     );
 
-    // Tạo Clock (Chu kỳ 10ns)
     initial begin
         clk = 0;
-        forever #5 clk = ~clk;
+        forever #5 clk = ~clk; //100MHz
     end
 
-    // Kịch bản Test (Stimulus)
     initial begin
         // 1. Reset hệ thống
         rst_n = 0;

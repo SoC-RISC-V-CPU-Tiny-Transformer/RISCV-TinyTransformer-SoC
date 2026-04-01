@@ -5,8 +5,8 @@ module tb_SA_64x64;
     // --- CẤU HÌNH KÍCH THƯỚC ---
     parameter DATA_WIDTH = 8;
     parameter ACC_WIDTH = 32;
-    parameter ARRAY_SIZE = 8;     // Kích thước phần cứng SA
-    parameter MAT_SIZE = 64;      // Kích thước bài toán ma trận lớn
+    parameter ARRAY_SIZE = 8;
+    parameter MAT_SIZE = 64;
     parameter NUM_BLOCKS = MAT_SIZE / ARRAY_SIZE; // Số lượng khối trên mỗi chiều (64/8 = 8 khối)
 
     logic clk;
@@ -28,18 +28,16 @@ module tb_SA_64x64;
 
     int error_count = 0;
     
-    // Biến giao tiếp giữa luồng Test (Stimulus) và luồng Giám sát (Monitor)
+    // Biến giao tiếp giữa luồng Test và luồng Giám sát
     int current_block_r = 0;
     int current_block_c = 0;
 
-    // --- KHỞI TẠO DUT ---
     SystolicArray #(
         .DATA_WIDTH(DATA_WIDTH), .ACC_WIDTH(ACC_WIDTH), .ARRAY_SIZE(ARRAY_SIZE)
     ) dut (.*);
 
     always #5 clk = ~clk;
 
-    // --- MAIN TEST FLOW ---
     initial begin
         clk = 0; rst_n = 0; valid_in = 0; acc_clear = 0; 
         // 64 phần tử nhân cộng dồn có thể cho ra số khá lớn, dịch phải 3 bit (chia 8) để tránh bão hòa
@@ -102,7 +100,7 @@ module tb_SA_64x64;
                     end
                 end
 
-                // Bơm xong 64 số, chốt (Flush) kết quả của Khối 8x8 này
+                // Bơm xong 64 số, Flush kết quả của Khối 8x8 này
                 @(posedge clk); #1;
                 valid_in = 0; acc_clear = 1;
                 for (int i = 0; i < ARRAY_SIZE; i++) begin
@@ -111,8 +109,6 @@ module tb_SA_64x64;
                 @(posedge clk); #1;
                 acc_clear = 0;
 
-                // CHỜ SA NHẢ HẾT KẾT QUẢ CỦA BLOCK (Khoảng 30 chu kỳ là đủ cho 8x8 drain ra)
-                // Cực kỳ quan trọng để khối Giám sát bắt được số liệu trước khi ta nạp Block mới
                 repeat(40) @(posedge clk); 
             end
         end
@@ -123,7 +119,7 @@ module tb_SA_64x64;
         for (int i = 0; i < MAT_SIZE; i++) begin
             for (int j = 0; j < MAT_SIZE; j++) begin
                 if (Hardware_C[i][j] !== Expected_C[i][j]) begin
-                    if (error_count < 10) begin // Chỉ in chi tiết 10 lỗi đầu tiên cho đỡ rác
+                    if (error_count < 10) begin
                         $display("   -> [LỖI TẠI TỌA ĐỘ (%0d, %0d)] HW: %0d | SW: %0d", 
                                   i, j, $signed(Hardware_C[i][j]), $signed(Expected_C[i][j]));
                     end
@@ -133,7 +129,7 @@ module tb_SA_64x64;
         end
 
         if (error_count == 0)
-            $display("   [THÀNH CÔNG RỰC RỠ] Khớp toàn bộ 4096/4096 phần tử! SA xử lý Tiling hoàn hảo!");
+            $display("[THÀNH CÔNG] Khớp toàn bộ 4096/4096 phần tử! SA xử lý Tiling chính xác");
         else
             $display("   [THẤT BẠI] Có tổng cộng %0d/%0d phần tử bị sai lệch.", error_count, MAT_SIZE*MAT_SIZE);
         $display("========================================================\n");

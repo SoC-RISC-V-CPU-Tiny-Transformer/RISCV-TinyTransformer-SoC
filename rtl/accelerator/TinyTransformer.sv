@@ -6,12 +6,13 @@ module Transformer #(
     parameter ARRAY_SIZE = 8,
     parameter MAT_SIZE = 64,
     parameter ADDR_WIDTH = 9,
-    parameter NUM_HEADS = 3
+    parameter NUM_HEADS = 2
 ) (
-    input  logic clk,
-    input  logic rst_n,
-    
-    input  logic system_start,
+    input logic clk,
+    input logic rst_n,
+
+    input logic [4:0] cfg_shifts [0:9],
+    input logic system_start,
     output logic system_done
 );
 
@@ -19,13 +20,14 @@ module Transformer #(
 
     logic start_matmul;
     logic transpose_mode;
+    
     logic [$clog2(ACC_WIDTH)-1:0] shift_amount;
     logic multi_head;
     
     logic [2:0] sel_in_a, sel_in_b;
     logic we_sram_x, we_sram_0, we_sram_1, we_sram_2, we_sram_3;
 
-    FSM #(
+    Controller #(
         .ACC_WIDTH(ACC_WIDTH)
     ) controller (
         .clk(clk),
@@ -33,7 +35,8 @@ module Transformer #(
         
         .system_start(system_start),
         .system_done(system_done),
-        
+        .cfg_shifts(cfg_shifts),
+
         .stage_done(stage_done),
         
         .start_matmul(start_matmul),

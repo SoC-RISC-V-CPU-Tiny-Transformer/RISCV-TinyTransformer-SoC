@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 
-module FSM #(
+module Controller #(
     parameter ACC_WIDTH = 32
 ) (
     input logic clk,
@@ -9,6 +9,11 @@ module FSM #(
     // Giao tiếp với Top Module
     input logic system_start,
     output logic system_done,
+
+    // --- MẢNG 10 THANH GHI SHIFT ---
+    // [0]:Q, [1]:K, [2]:V, [3]:Score_H0, [4]:Score_H1, 
+    // [5]:Attn_H0, [6]:Attn_H1, [7]:Proj_O, [8]:FFN1, [9]:FFN2
+    input logic [4:0] cfg_shifts [0:9],
 
     input logic stage_done, // Nhận tín hiệu từ Datapath mỗi khi done 1 stage
 
@@ -87,12 +92,14 @@ module FSM #(
                 sel_in_a = 3'd0;
                 sel_in_b = 3'd1;
                 we_sram_3 = 1;
+                shift_amount = cfg_shifts[0];
             end
             WAIT_Q: begin
                 transpose_mode = 1;
                 sel_in_a = 3'd0;
                 sel_in_b = 3'd1;
                 we_sram_3 = 1;
+                shift_amount = cfg_shifts[0];
             end
 
             CALC_K: begin
@@ -101,12 +108,14 @@ module FSM #(
                 sel_in_a = 3'd0;
                 sel_in_b = 3'd2;
                 we_sram_0 = 1;
+                shift_amount = cfg_shifts[1];
             end
             WAIT_K: begin
                 transpose_mode = 1;
                 sel_in_a = 3'd0;
                 sel_in_b = 3'd2;
                 we_sram_0 = 1;
+                shift_amount = cfg_shifts[1];
             end
 
             CALC_V: begin
@@ -115,12 +124,14 @@ module FSM #(
                 sel_in_a = 3'd0;
                 sel_in_b = 3'd3;
                 we_sram_1 = 1;
+                shift_amount = cfg_shifts[2];
             end
             WAIT_V: begin
                 transpose_mode = 0;
                 sel_in_a = 3'd0;
                 sel_in_b = 3'd3;
                 we_sram_1 = 1;
+                shift_amount = cfg_shifts[2];
             end
 
             DONE: system_done = 1;
