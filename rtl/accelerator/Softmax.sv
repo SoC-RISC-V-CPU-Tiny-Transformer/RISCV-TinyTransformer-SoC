@@ -25,30 +25,6 @@ module Softmax #(
 );
     localparam NUM_BLOCKS = MAT_SIZE / ARRAY_SIZE;
 
-    // =========================================================
-    // LUT FOR 2^F
-    // F has 4 bits (0 to 15). 2^(-F/16) Q7 format.
-    // =========================================================
-    logic [DATA_WIDTH-1:0] exp_lut [0:15];
-    initial begin
-        exp_lut[0]  = 127; // 2^0 = 1.0 (Q7)
-        exp_lut[1]  = 121; // 2^(-1/16) = 0.957
-        exp_lut[2]  = 116; // 2^(-2/16) = 0.917
-        exp_lut[3]  = 111; // ...
-        exp_lut[4]  = 106; 
-        exp_lut[5]  = 101; 
-        exp_lut[6]  = 97;  
-        exp_lut[7]  = 93;  
-        exp_lut[8]  = 89;  
-        exp_lut[9]  = 85;  
-        exp_lut[10] = 81;  
-        exp_lut[11] = 78;  
-        exp_lut[12] = 74;  
-        exp_lut[13] = 71;  
-        exp_lut[14] = 68;  
-        exp_lut[15] = 65;  // 2^(-15/16) = 0.522
-    end
-
     // PING-PONG BUFFER
     logic signed [DATA_WIDTH-1:0] row_buffer [0:1][0:NUM_BLOCKS-1][ARRAY_SIZE-1:0];
     logic [DATA_WIDTH-1:0] exp_buffer [0:1][0:NUM_BLOCKS-1][ARRAY_SIZE-1:0];
@@ -155,16 +131,17 @@ module Softmax #(
 
     logic [DATA_WIDTH-1:0] exp_vals [0:ARRAY_SIZE-1];
     logic [31:0] temp_sum;
+    logic [DATA_WIDTH-1:0] abs_diff;
+    logic [3:0] int_part;
+    logic [DATA_WIDTH-1:0] raw_frac;
+    logic [3:0] lut_idx;
+    logic [DATA_WIDTH-1:0] lut_val;
+    logic [DATA_WIDTH-1:0] exp_val;
+
     always_comb begin
         temp_sum = 0;
         for(int i = 0; i < ARRAY_SIZE; i++) begin
-            logic [DATA_WIDTH-1:0] abs_diff;
-            logic [3:0] int_part;
-            logic [DATA_WIDTH-1:0] raw_frac;
-            logic [3:0] lut_idx;
-            logic [DATA_WIDTH-1:0] lut_val;
-            logic [DATA_WIDTH-1:0] exp_val;
-            
+
             abs_diff = row_max[s2_row[0]] - row_buffer[s2_row[0]][cycle_cnt[$clog2(NUM_BLOCKS)-1:0]][i];
             int_part = abs_diff >> q_frac;
             raw_frac = abs_diff & ((1 << q_frac) - 1);
@@ -172,9 +149,32 @@ module Softmax #(
                 lut_idx = raw_frac >> (q_frac - 4);
             else
                 lut_idx = raw_frac << (4 - q_frac);
-            lut_val = exp_lut[lut_idx];
+
+            // =========================================================
+            // LUT FOR 2^F
+            // F has 4 bits (0 to 15). 2^(-F/16) Q7 format.
+            // =========================================================
+            case(lut_idx)
+                4'd0:  lut_val = 127;
+                4'd1:  lut_val = 121;
+                4'd2:  lut_val = 116;
+                4'd3:  lut_val = 111;
+                4'd4:  lut_val = 106;
+                4'd5:  lut_val = 101;
+                4'd6:  lut_val = 97;
+                4'd7:  lut_val = 93;
+                4'd8:  lut_val = 89;
+                4'd9:  lut_val = 85;
+                4'd10: lut_val = 81;
+                4'd11: lut_val = 78;
+                4'd12: lut_val = 74;
+                4'd13: lut_val = 71;
+                4'd14: lut_val = 68;
+                4'd15: lut_val = 65;
+                default: lut_val = 127;
+            endcase
+
             exp_val = lut_val >> int_part;
-            
             exp_vals[i] = exp_val;
             temp_sum = temp_sum + exp_val;
         end
@@ -183,7 +183,7 @@ module Softmax #(
     always_ff @(posedge clk) begin
         if(s2_en) begin
             for(int i = 0; i < ARRAY_SIZE; i++)
-                exp_buffer[s2_row[0]][cycle_cnt[$clog2(NUM_BLOCKS)-1:0]][i] = exp_vals[i];
+                exp_buffer[s2_row[0]][cycle_cnt[$clog2(NUM_BLOCKS)-1:0]][i] <= exp_vals[i];
             
             if(cycle_cnt == 0)
                 exp_sum[s2_row[0]] <= temp_sum;
@@ -211,6 +211,7 @@ module Softmax #(
                     logic [15:0] div;
                     scaled_exp = exp_buffer[s3_row[0]][cycle_cnt[$clog2(NUM_BLOCKS)-1:0]][i] << 7; // Pre quantization with Q7 format.
                     div = scaled_exp / exp_sum[s3_row[0]];
+
                     if (div > 127) 
                         write_data[i] <= 8'd127;
                     else 

@@ -16,6 +16,8 @@ module MatMul #(
     input logic transpose_mode,
     input logic [$clog2(ACC_WIDTH)-1:0] shift_amount,
     input logic multi_head,
+    input logic [$clog2(NUM_HEADS)-1:0] head_idx,
+    input logic is_calc_z,
     output logic done,
 
     // --- Giao tiếp với SRAM để đọc input ---
@@ -35,6 +37,32 @@ module MatMul #(
     output logic [$clog2(ARRAY_SIZE)-1:0] out_bc
 );
     localparam NUM_BLOCKS = MAT_SIZE / ARRAY_SIZE;
+
+    logic [$clog2(MAT_SIZE)-1:0] k_start, k_end;
+    logic [$clog2(NUM_BLOCKS)-1:0] bc_start, bc_end;
+    logic [$clog2(MAT_SIZE)+1:0] total_blocks;
+
+    always_comb begin
+        if(multi_head && !is_calc_z) begin
+            k_start = head_idx * MAT_SIZE / NUM_HEADS;
+            k_end = k_start + MAT_SIZE / NUM_HEADS - 1; 
+        end
+        else begin
+            k_start = 0;
+            k_end = MAT_SIZE - 1;
+        end
+
+        if(is_calc_z) begin
+            bc_start = head_idx * NUM_BLOCKS / NUM_HEADS;
+            bc_end = bc_start + NUM_BLOCKS / NUM_HEADS - 1;
+        end
+        else begin
+            bc_start = 0;
+            bc_end = NUM_BLOCKS - 1;
+        end
+    end
+
+    assign total_blocks = NUM_BLOCKS * (bc_end - bc_start + 1);
 
     // =========================================================
     // FSM READ INPUT FROM SRAM
@@ -58,13 +86,13 @@ module MatMul #(
 
             case(state) 
                 IDLE: begin
-                    k_idx <= 0; blocks_fed <= 0;
-                    br <= 0; bc <= 0;
+                    k_idx <= k_start; blocks_fed <= 0;
+                    br <= 0; bc <= bc_start;
                 end
                 FEED: k_idx <= k_idx + 1;
 
                 FLUSH: begin
-                    k_idx <= 0;
+                    k_idx <= k_start;
                     blocks_fed <= blocks_fed + 1;
                     if(transpose_mode) begin
                         if(br == NUM_BLOCKS - 1) begin
@@ -75,9 +103,9 @@ module MatMul #(
                             br <= br + 1;
                     end
                     else begin
-                        if(bc == NUM_BLOCKS - 1) begin
+                        if(bc == bc_end) begin
                             br <= br + 1;
-                            bc <= 0;
+                            bc <= bc_start;
                         end
                         else
                             bc <= bc + 1;
@@ -99,17 +127,13 @@ module MatMul #(
                 read_req_a = 1; read_req_b = 1; valid_req = 1;
                 read_addr_a = k_idx * ARRAY_SIZE + br;
                 read_addr_b = k_idx * ARRAY_SIZE + bc;
-                if(multi_head) begin
-                    if(k_idx == MAT_SIZE / NUM_HEADS - 1) next_state = FLUSH;
-                end
-                else begin
-                    if(k_idx == MAT_SIZE - 1) next_state = FLUSH;
-                end
+                
+                if(k_idx == k_end) next_state = FLUSH; 
             end
 
             FLUSH: begin
                 clear_req = 1;
-                if(blocks_fed == NUM_BLOCKS * NUM_BLOCKS - 1)
+                if(blocks_fed == total_blocks - 1)
                     next_state = WAIT_DONE;
                 else
                     next_state = FEED;
@@ -154,7 +178,7 @@ module MatMul #(
     // =========================================================
     always_ff @(posedge clk) begin
         if(!rst_n || state == IDLE) begin
-            out_br <= 0; out_bc <= 0;
+            out_br <= 0; out_bc <= bc_start;
         end
         else begin
             if(valid_row_aligned[ARRAY_SIZE-1]) begin
@@ -167,8 +191,8 @@ module MatMul #(
                         out_br <= out_br + 1;
                 end
                 else begin
-                    if(out_bc == NUM_BLOCKS - 1) begin
-                        out_bc <= 0;
+                    if(out_bc == bc_end) begin
+                        out_bc <= bc_start;
                         out_br <= out_br + 1;
                     end 
                     else out_bc <= out_bc + 1;
@@ -203,6 +227,6 @@ module MatMul #(
         end
     end
 
-    assign done = valid_out && (out_counter == (MAT_SIZE * ARRAY_SIZE - 1));
+    assign done = valid_out && (out_counter == (total_blocks * ARRAY_SIZE - 1));
 
 endmodule
