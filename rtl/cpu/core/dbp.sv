@@ -41,10 +41,11 @@ module dbp
 );
     //BHT and BTB Storage
     logic [PRED_BITS-1:0]       bht         [BP_ENTRIES];
+    initial foreach (bht[i]) bht[i] = STRONGLY_NT; //FPGA power-on = 0; init sim to match
 
     logic [ADDR_WIDTH-1:0]      btb_target  [BP_ENTRIES];
     logic [BTB_TAG_BITS-1:0]    btb_tag     [BP_ENTRIES];
-    logic [BP_ENTRIES-1:0]      btb_valid;  //like cache, small 
+    logic [BP_ENTRIES-1:0]      btb_valid;  //like cache, small
 
     //if read
     logic [BP_IDX_BITS-1:0] if_pc_idx;

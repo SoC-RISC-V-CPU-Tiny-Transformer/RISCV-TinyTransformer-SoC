@@ -51,7 +51,10 @@ module riscv_core
     output logic [3:0]              mem_wstrb,
     input  logic [DATA_WIDTH-1:0]   mem_rdata,
     input  logic                    mem_dcache_ready,
-    input  logic                    mem_dcache_valid
+    input  logic                    mem_dcache_valid,
+
+    //refill abandon - registered mispredict to icache
+    output logic                    flush_refill_o
 );
 
     //internal wires
@@ -138,10 +141,13 @@ module riscv_core
     assign ex_mem_stall = dcache_stall;
     assign mem_wb_stall = dcache_stall;
 
-    assign if_id_flush  = mispredict_r | (!if_icache_valid && !if_id_stall);
+    //CWF + if_id_flush now inside FCU — removed from here
     assign id_ex_flush  = mispredict_r | ex_flush;
     assign ex_mem_flush = mispredict_r;   //extra flush: wrong instr already in EX
     assign mem_wb_flush = 1'b0;
+
+    //expose registered mispredict to cache_subsystem
+    assign flush_refill_o = mispredict_r;
 
     //register mispredict 1 cycle: cuts 14-level combinational feedback path
     //penalty: 2→3 cycles on mispredict, but timing budget restored
@@ -150,7 +156,7 @@ module riscv_core
             mispredict_r <= 1'b0;
             correct_pc_r <= '0;
         end else begin
-            mispredict_r <= bru_mispredict;
+            mispredict_r <= bru_mispredict && !mispredict_r;
             correct_pc_r <= bru_correct_pc;
         end
     end
@@ -191,7 +197,8 @@ module riscv_core
         .instr_o          (fcu_instr),
         .if_id_pc         (fcu_if_id_pc),
         .if_id_pred_taken (fcu_if_id_pred_taken),
-        .if_id_pred_target(fcu_if_id_pred_target)
+        .if_id_pred_target(fcu_if_id_pred_target),
+        .if_id_flush      (if_id_flush)
     );
 
     //dbp instance
@@ -314,10 +321,13 @@ module riscv_core
     );
 
     //forwarding muxes
-    assign fw_src_a = (forward_a == 2'b10) ? mem_alu_result : 
+    logic [DATA_WIDTH-1:0] mem_fwd_val;
+    assign mem_fwd_val  = (mem_wb_sel == WB_PC4) ? (mem_pc + 32'd4) : mem_alu_result;
+
+    assign fw_src_a = (forward_a == 2'b10) ? mem_fwd_val : 
                       (forward_a == 2'b01) ? wb_wdata : ex_rdata1;
 
-    assign fw_src_b = (forward_b == 2'b10) ? mem_alu_result : 
+    assign fw_src_b = (forward_b == 2'b10) ? mem_fwd_val : 
                       (forward_b == 2'b01) ? wb_wdata : ex_rdata2;
 
     //alu operand muxes

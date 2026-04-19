@@ -51,9 +51,11 @@ module rf
     logic [DATA_WIDTH-1:0] register [31:0];
 
     //read
-    //forward
-    assign rdata1   = (reg_we && rd == rs1 && rd != 5'b0) ? wdata : register[rs1];
-    assign rdata2   = (reg_we && rd == rs2 && rd != 5'b0) ? wdata : register[rs2];
+    //x0 hardwired to 0; write-first forwarding for rs1/rs2
+    assign rdata1   = (rs1 == 5'b0) ? 32'b0 :
+                      (reg_we && rd == rs1) ? wdata : register[rs1];
+    assign rdata2   = (rs2 == 5'b0) ? 32'b0 :
+                      (reg_we && rd == rs2) ? wdata : register[rs2];
 
     //write
     always_ff @(posedge clk) begin

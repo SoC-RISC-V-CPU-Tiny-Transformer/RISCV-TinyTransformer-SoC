@@ -82,6 +82,9 @@ module riscv_soc
     logic [STRB_WIDTH-1:0]  mem_wstrb;
     logic                   mem_dcache_ready, mem_dcache_valid;
 
+    //refill abandon channel
+    logic                   flush_refill;
+
     //riscv_core instance
     riscv_core u_riscv_core (
         .clk              (clk),
@@ -98,7 +101,8 @@ module riscv_soc
         .mem_wstrb        (mem_wstrb),
         .mem_rdata        (mem_rdata),
         .mem_dcache_ready (mem_dcache_ready),
-        .mem_dcache_valid (mem_dcache_valid)
+        .mem_dcache_valid (mem_dcache_valid),
+        .flush_refill_o   (flush_refill)
     );
 
     //cache_subsystem instance
@@ -110,6 +114,7 @@ module riscv_soc
         .if_instr         (if_instr),
         .if_icache_ready  (if_icache_ready),
         .if_icache_valid  (if_icache_valid),
+        .flush_refill     (flush_refill),
         .mem_addr         (mem_addr),
         .mem_req          (mem_req),
         .mem_we           (mem_we),

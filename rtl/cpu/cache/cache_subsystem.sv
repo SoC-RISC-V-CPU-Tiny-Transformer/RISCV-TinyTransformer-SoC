@@ -32,6 +32,9 @@ module cache_subsystem
     output logic                    if_icache_ready,
     output logic                    if_icache_valid,
 
+    //refill abandon - core mispredict feedback
+    input  logic                    flush_refill,
+
     //mem stage
     input  logic [ADDR_WIDTH-1:0]   mem_addr,
     input  logic                    mem_req,
@@ -127,6 +130,7 @@ module cache_subsystem
         .instr          (if_instr),
         .icache_ready   (if_icache_ready),
         .icache_valid   (if_icache_valid),
+        .flush_refill   (flush_refill),
         .arb_rdata      (ic_arb_rdata),
         .arb_valid      (ic_arb_valid),
         .arb_last       (ic_arb_last),

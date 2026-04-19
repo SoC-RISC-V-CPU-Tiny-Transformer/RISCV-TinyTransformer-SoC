@@ -121,7 +121,7 @@ module cu
 
         //only OP_R and OP_I_ALU need deep decode
         case (opcode)
-            OP_R, OP_I_ALU: begin
+            OP_R: begin
                 case ({funct7[5], funct3})
                     4'b0_000: alu_op = ALU_ADD;
                     4'b1_000: alu_op = ALU_SUB;
@@ -138,6 +138,19 @@ module cu
             end
 
             OP_U_LUI:   alu_op = ALU_PASS_B;  //rd = imm, ignore rs1
+            
+            OP_I_ALU: begin
+                case (funct3)
+                    3'b000: alu_op = ALU_ADD;   //addi
+                    3'b001: alu_op = ALU_SLL;   //slli
+                    3'b010: alu_op = ALU_SLT;   //slti
+                    3'b011: alu_op = ALU_SLTU;  //sltu
+                    3'b100: alu_op = ALU_XOR;   //xori
+                    3'b101: alu_op = funct7[5] ? ALU_SRA : ALU_SRL;
+                    3'b110: alu_op = ALU_OR;    //ori
+                    3'b111: alu_op = ALU_AND;   //andi
+                endcase
+            end
 
             default:    alu_op = ALU_ADD;
         endcase

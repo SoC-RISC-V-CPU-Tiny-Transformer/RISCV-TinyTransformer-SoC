@@ -18,10 +18,13 @@
 //
 // Author       : NGUYEN TO QUOC VIET
 // Date         : 2026-03-04
-// Version      : 1.0
+// Version      : 1.1
+// Changes v1.1 : Speculative refill abandon-on-redirect (tag-validated
+//                REFILL_DONE output, skip storage commit on wrong-path,
+//                CWF bypass gated by abandon)
 // -----------------------------------------------------------------------------
 
-module icache 
+module icache
     import cache_pkg::*;
 (
     //system
@@ -34,6 +37,9 @@ module icache
     output logic [DATA_WIDTH-1:0] instr,
     output logic icache_ready,
     output logic icache_valid,
+
+    //refill abandon - core mispredict feedback
+    input logic flush_refill,
 
     //arbiter - i-cache interface
     input logic [DATA_WIDTH-1:0] arb_rdata,
@@ -51,7 +57,7 @@ module icache
 
     assign pc_word_sel  = pc[WORD_OFF_BITS +: WORD_SEL_BITS];   //3 - 2
     assign pc_idx       = pc[LINE_OFF_BITS +: IC_IDX_BITS];     //11 - 4
-    assign pc_tag       = pc[ADDR_WIDTH-1 -: IC_TAG_BITS];      //31 - 12 
+    assign pc_tag       = pc[ADDR_WIDTH-1 -: IC_TAG_BITS];      //31 - 12
 
     //storage — cache_data is 1D (line-wide) to avoid Vivado multi-dim RAM warning
     localparam LINE_WIDTH = DATA_WIDTH * WORDS_PER_LINE;
@@ -86,6 +92,12 @@ module icache
 
     state_t state, next_state;
 
+    //refill abandon: sticky set khi redirect arrive mid-refill
+    //squash combinational: gop flush_refill cung cycle de kill ngay REFILL_DONE
+    logic rf_abandon;
+    logic refill_squash;
+    assign refill_squash = rf_abandon || flush_refill;
+
     //FSM: next state logic
     always_comb begin
         //default
@@ -93,7 +105,7 @@ module icache
 
         case (state)
             IDLE: begin
-                if (if_req && !cache_hit) 
+                if (if_req && !cache_hit)
                     next_state = REFILL_REQ;
             end
 
@@ -103,7 +115,7 @@ module icache
             end
 
             REFILL_DATA: begin
-                if (arb_valid && arb_last) 
+                if (arb_valid && arb_last)
                     next_state = REFILL_DONE;
             end
 
@@ -111,6 +123,16 @@ module icache
                 next_state = IDLE;
             end
         endcase
+    end
+
+    //refill abandon register
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            rf_abandon <= 1'b0;
+        else if (state == IDLE)
+            rf_abandon <= 1'b0;
+        else if (flush_refill)
+            rf_abandon <= 1'b1;
     end
 
     //FSM: control registers — only signals that NEED async reset
@@ -134,8 +156,9 @@ module icache
                 end
 
                 REFILL_DONE: begin
-                    cache_valid[rf_idx] <= 1'b1;
-                    rf_valid            <= '0;
+                    if (!refill_squash)
+                        cache_valid[rf_idx] <= 1'b1;
+                    rf_valid <= '0;
                 end
             endcase
         end
@@ -160,9 +183,11 @@ module icache
             end
 
             REFILL_DONE: begin
-                cache_tag[rf_idx] <= rf_tag;
-                for (int w = 0; w < WORDS_PER_LINE; w++)
-                    cache_data[rf_idx][w*DATA_WIDTH +: DATA_WIDTH] <= rf_buffer[w];
+                if (!refill_squash) begin
+                    cache_tag[rf_idx] <= rf_tag;
+                    for (int w = 0; w < WORDS_PER_LINE; w++)
+                        cache_data[rf_idx][w*DATA_WIDTH +: DATA_WIDTH] <= rf_buffer[w];
+                end
             end
         endcase
     end
@@ -176,7 +201,7 @@ module icache
         case (state)
             IDLE: begin
                 icache_ready = 1'b1;
-                
+
                 //neu hit
                 if (if_req && cache_hit) begin
                     instr           = hit_data;
@@ -185,22 +210,26 @@ module icache
             end
 
             REFILL_REQ: begin
-                
+
             end
 
             REFILL_DATA: begin
-                if (rf_buffer_hit) begin
+                //CWF bypass chi forward khi !rf_abandon
+                if (rf_buffer_hit && !rf_abandon) begin
                     instr       = rf_buffer[pc_word_sel];
                     icache_valid= 1'b1;
                 end
 
-                icache_ready    = 1'b0; 
+                icache_ready    = 1'b0;
             end
 
             REFILL_DONE: begin
-                instr       = rf_buffer[pc_word_sel];
-                icache_valid= 1'b1;
-                icache_ready= 1'b1; 
+                //tag-validated output: chan race + chan abandon
+                if (!refill_squash && (rf_tag == pc_tag) && (rf_idx == pc_idx)) begin
+                    instr       = rf_buffer[pc_word_sel];
+                    icache_valid= 1'b1;
+                end
+                icache_ready= 1'b1;
             end
         endcase
     end
