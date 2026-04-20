@@ -205,7 +205,7 @@ module tiny_dma (
                 if (m_axi_awready) begin
                     // Read the first SRAM memory cell of the burst
                     sram_re_o     = 1'b1;
-                    sram_raddr_d  = sram_raddr_q + 1'b1;
+                    // sram_raddr_d  = sram_raddr_q + 1'b1;
                     wdata_valid_d = 1'b1; // The next cycle will have data
                     w_state_d     = W_SEND_DATA;
                 end
@@ -222,6 +222,7 @@ module tiny_dma (
                     if (m_axi_wlast) begin
                         w_beat_cnt_d  = '0;
                         wdata_valid_d = 1'b0; // End burst
+                        sram_raddr_d  = sram_raddr_q + 1'b1;
                         w_state_d     = W_WAIT_B;
                     end else begin
                         // Continue reading SRAM for the next AXI beat
