@@ -26,7 +26,9 @@ module Datapath #(
     input logic [2:0] sel_in_a, sel_in_b, // MUX ĐẦU VÀO: 0=SRAM_X, 1=SRAM_0, 2=SRAM_1, 3=SRAM_2, 4=SRAM_3, 5=SRAM_4
     input logic we_sram_x, we_sram_0, we_sram_1, we_sram_2, we_sram_3, we_sram_4, // DEMUX ĐẦU RA
 
-    output logic stage_done
+    output logic stage_done,
+    output logic debug_wvalid,
+    output logic signed [DATA_WIDTH-1:0] debug_wdata [ARRAY_SIZE-1:0]
 );
     localparam NUM_BLOCKS = MAT_SIZE / ARRAY_SIZE;
 
@@ -277,6 +279,12 @@ module Datapath #(
             wdata = matmul_out_data;
         end
     end
+
+    // ==========================================
+    // DEBUG OUTPUTS FOR SYNTHESIS PRESERVATION
+    // ==========================================
+    assign debug_wvalid = write_valid;
+    assign debug_wdata = wdata;
 
     // ==========================================
     // STAGE DONE

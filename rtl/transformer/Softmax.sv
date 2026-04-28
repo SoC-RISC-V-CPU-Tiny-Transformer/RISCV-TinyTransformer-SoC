@@ -200,17 +200,50 @@ module Softmax #(
     assign s3_en = (state == RUNNING) && (cycle_cnt < 8) && (pipe_row >= 2) && (pipe_row < 66);
     assign s3_row = pipe_row - 2;
 
+    // STAGE 3.1: TRA BẢNG LUT
+    logic s3_en_pipe;
+    logic [$clog2(MAT_SIZE)-1:0] s3_row_pipe;
+    logic [ADDR_WIDTH-1:0] write_addr_pipe;
+    
+    (* dont_touch = "true" *) logic [15:0] scaled_exp_pipe [ARRAY_SIZE-1:0];
+    (* dont_touch = "true" *) logic [30:0] reciprocal_pipe;
+
+    // Phạm vi lớn nhất của exp_sum: 64 phần tử * 127 (max int 8 bit) = 8128 < 8192
+    (* rom_style = "block" *) logic [30:0] reciprocal_lut [0:8191];
+    initial begin
+        reciprocal_lut[0] = 0;
+        for (int k = 1; k < 8192; k++) begin
+            reciprocal_lut[k] = (31'd1073741824 + k - 1) / k;
+        end
+    end
+
+    always_ff @(posedge clk) begin
+        s3_en_pipe <= s3_en;
+        if (s3_en) begin
+            s3_row_pipe <= s3_row;
+            write_addr_pipe <= s3_row * NUM_BLOCKS + cycle_cnt[$clog2(NUM_BLOCKS)-1:0];
+            
+            reciprocal_pipe <= reciprocal_lut[exp_sum[s3_row[0]][12:0]];
+            
+            for(int i = 0; i < ARRAY_SIZE; i++) begin
+                scaled_exp_pipe[i] <= exp_buffer[s3_row[0]][cycle_cnt[$clog2(NUM_BLOCKS)-1:0]][i] << 7;
+            end
+        end
+    end
+
+    // STAGE 3.2: Nhân và Ghi SRAM
     always_ff @(posedge clk) begin
         if(!rst_n)  write_req <= 0;
         else begin
-            write_req <= s3_en;
-            if(s3_en) begin
-                write_addr <= s3_row * NUM_BLOCKS + cycle_cnt[$clog2(NUM_BLOCKS)-1:0];
+            write_req <= s3_en_pipe; // Trễ 1 nhịp so với s3_en
+            if(s3_en_pipe) begin
+                write_addr <= write_addr_pipe;
                 for(int i = 0; i < ARRAY_SIZE; i++) begin
-                    logic [15:0] scaled_exp;
+                    logic [46:0] prod;
                     logic [15:0] div;
-                    scaled_exp = exp_buffer[s3_row[0]][cycle_cnt[$clog2(NUM_BLOCKS)-1:0]][i] << 7; // Pre quantization with Q7 format.
-                    div = scaled_exp / exp_sum[s3_row[0]];
+                    
+                    prod = scaled_exp_pipe[i] * reciprocal_pipe;
+                    div = prod >> 30;
 
                     if (div > 127) 
                         write_data[i] <= 8'd127;

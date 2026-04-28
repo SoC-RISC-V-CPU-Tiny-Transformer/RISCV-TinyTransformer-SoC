@@ -14,7 +14,11 @@ module Transformer #(
     input logic [4:0] cfg_shifts [0:9],
     input logic [3:0] head_q_frac [NUM_HEADS-1:0],
     input logic system_start,
-    output logic system_done
+    output logic system_done,
+    
+    // Debug ports to prevent vivado logic trimming
+    output logic debug_wvalid,
+    output logic signed [DATA_WIDTH-1:0] debug_wdata [ARRAY_SIZE-1:0]
 );
 
     logic stage_done;
@@ -101,6 +105,9 @@ module Transformer #(
         .we_sram_2(we_sram_2),
         .we_sram_3(we_sram_3),
         .we_sram_4(we_sram_4),
+
+        .debug_wvalid(debug_wvalid),
+        .debug_wdata(debug_wdata),
         
         .stage_done(stage_done)
     );

@@ -4,20 +4,25 @@ module PE #(
     parameter DATA_WIDTH = 8,
     parameter ACC_WIDTH = 32
 ) (
-    input  logic clk,
-    input  logic rst_n,
+    input logic clk,
+    input logic rst_n,
     
-    input  logic valid_in,
-    input  logic acc_clear,
-    input  logic [$clog2(ACC_WIDTH)-1:0] shift_amount,
+    input logic valid_in,
+    input logic acc_clear,
+    input logic [$clog2(ACC_WIDTH)-1:0] shift_amount,
+    input logic ws_mode,
+    input logic preload_w,
+    input logic update_w,
     
     // --- DỮ LIỆU NHẬN VÀO (Từ hàng xóm phía Trên và Bên Trái) ---
-    input  logic signed [DATA_WIDTH-1:0] in_a, // Dữ liệu X chảy từ Trái sang
-    input  logic signed [DATA_WIDTH-1:0] in_b, // Truyền số W chảy từ Trên xuống
+    input logic signed [DATA_WIDTH-1:0] in_a, // Dữ liệu X chảy từ trái sang
+    input logic signed [DATA_WIDTH-1:0] in_b, // Truyền số W chảy từ trên xuống
+    input logic signed [ACC_WIDTH-1:0] psum_in, // Nhận psum từ phía trên xuống
     
     // --- DỮ LIỆU TRUYỀN ĐI (Cho hàng xóm phía Dưới và Bên Phải) ---
     output logic signed [DATA_WIDTH-1:0] out_a, // Truyền X sang Phải
     output logic signed [DATA_WIDTH-1:0] out_b, // Truyền W xuống Dưới
+    output logic signed [ACC_WIDTH-1:0] psum_out, // Truyền psum xuống Dưới
 
     // --- TRUYỀN TÍN HIỆU ĐIỀU KHIỂN ---
     output logic out_valid_ctrl,
@@ -38,19 +43,22 @@ module PE #(
         .shift_amount(shift_amount),
         .in_a(in_a),
         .in_b(in_b),
+        .psum_in(psum_in),
+        .ws_mode(ws_mode),
+        .preload_w(preload_w),
+        .update_w(update_w),
+        .psum_out(psum_out),
         .valid_out(valid_out),
         .mac_out(pe_out)
     );
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            out_a <= '0;
-            out_b <= '0;
             out_valid_ctrl <= 1'b0;
             out_clear_ctrl <= 1'b0;
         end
         else begin
-            // Mỗi khi lock là PE copy dữ liệu đầu vào 
+            // Mỗi khi có clock là PE copy dữ liệu đầu vào 
             // đẩy ra cửa đầu ra để chuẩn bị cho hàng xóm ở chu kỳ sau.
             out_a <= in_a;
             out_b <= in_b;
