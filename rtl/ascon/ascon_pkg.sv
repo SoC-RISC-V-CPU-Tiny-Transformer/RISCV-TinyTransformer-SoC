@@ -11,6 +11,9 @@
 
 package ascon_pkg;
 
+    localparam DATA_WIDTH = 128;
+
+
     function automatic logic [63:0] ROR(
         input logic [63:0] x_in,
         input logic [5:0]  n
@@ -25,29 +28,42 @@ package ascon_pkg;
         8'h78, 8'h69, 8'h5a, 8'h4b
     };
 
-    function automatic logic [63:0] PAD(
-        input logic [63:0] data_in,
-        input logic [7:0]  tkeep
+
+    // CONVERSION BIG -> LITTLE ENDIAN
+    function automatic logic [DATA_WIDTH-1:0] CONVERSION (
+        input logic [DATA_WIDTH-1:0] data_in
     );
-        logic [63:0] padded_data;
-        
-        for (int i = 0; i < 8; i++) begin
-            if (tkeep[7-i] == 1'b1) begin
-                padded_data[7-i] = data_in[7-1];
-            end
-            else if ((i == 0 && tkeep[7] == 1'b0) || 
-                     (i > 0 && tkeep[7-i+1] == 1'b1 && tkeep[7-i] == 1'b0)) begin
-                padded_data[(7-i)*8 +: 8] = data_in[(7-i)*8 +: 8];
-            end
-            else begin
-                padded_data[(7-i)*8 +: 8] = 8'h80; 
+        logic [DATA_WIDTH-1:0] out_data;
+        for (int i = 0; i < DATA_WIDTH/8; i++) begin
+            out_data[i*8 +: 8] = data_in[( (DATA_WIDTH/8) - 1 - i)*8 +: 8];
+        end
+        return out_data;
+    endfunction 
+    
+
+    // PADDING - LITTLE ENDIAN (Padding = 0x01)
+    // 128-bit (16 Bytes)
+    function automatic logic [DATA_WIDTH-1:0] PAD (
+        input logic [DATA_WIDTH-1:0] data_in,
+        input logic [DATA_WIDTH/8-1:0]  tkeep
+    );
+        logic [DATA_WIDTH-1:0] out_data;
+        out_data = data_in; 
+
+        for (int i = 0; i < DATA_WIDTH/8; i++) begin
+            if (tkeep[i] == 1'b0) begin
+                if (i == 0 || tkeep[i-1] == 1'b1) begin
+                    out_data[i*8 +: 8] = 8'h01; // Padding Little-Endian
+                end else begin
+                    out_data[i*8 +: 8] = 8'h00; 
+                end
             end
         end
-
-
-        return padded_data;
+        return out_data;
     endfunction
     
+
+
     // NIST LWC Standard IVs 
     localparam logic [63:0] ASCON_128_IV  = 64'h00000800806C0001;
     localparam logic [63:0] ASCON_128A_IV = 64'h00001000808C0001;
