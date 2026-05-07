@@ -1,130 +1,100 @@
 `timescale 1ns / 1ps
 
-module Ascon_Core_tb();
+module Ascon_Core_tb;
 
-    logic         clk;
-    logic         rst_n;
+    import ascon_pkg::*;
+    logic clk;
+    logic reset_n;
+    
+    // Stream Interface
+    logic        mess_valid;
+    logic        mess_pull;
+    logic [63:0] message;
+    logic        mess_last;
+    logic        cipher_push;
+    logic        cipher_ready;
+    logic [63:0] cipher;
+    logic        cipher_last;
 
-    // CPU Control
+    // Control Interface
     logic         start;
-    logic         variant_128a;
-    logic         has_ad;
-    logic         has_msg;
-    logic         decrypt_mode;
     logic [127:0] key;
     logic [127:0] nonce;
+    logic [1:0]   mode;
+    logic         skip_asso;
+    logic [127:0] in_tag;
+    logic [127:0] out_tag;
+    logic         success_tag;
     logic         done;
 
-    // DMA Data In
-    logic [127:0] cipher_in;
-    logic [15:0]  t_keep;
-    logic         data_valid;
-    logic         data_last;
-    logic         data_ready;
+    // Clock Generation
+    initial clk = 0;
+    always #5 clk = ~clk;
 
-    // Output Data
-    logic [127:0] cipher_out;
-    logic [127:0] tag_out;
-    logic         msg_valid;
-    logic         tag_valid;
+    // Unit Under Test (UUT)
+    Ascon_Core uut (.*);
 
-    // Clock (10ns -> 100MHz)
     initial begin
-        clk = 0;
-        forever #5 clk = ~clk;
+        // Setup
+        reset_n = 0; start = 0; mode = 2'b00; // Encrypt
+        key   = 128'h08090a0b0c0d0e0f_0001020304050607; // Little-endian order
+        nonce = 128'h08090a0b0c0d0e0f_0001020304050607;
+        skip_asso = 1'b0;
+        cipher_ready = 1'b1;
+        mess_valid = 0; message = 0; mess_last = 0;
+        
+        #20 reset_n = 1;
+        #10 start = 1; // Initialization
+        #10 start = 0;
+
+        wait(uut.state == 2); // Chờ chuyển sang ASSO_DATA (State 2)
+        $display("[%0t] Initialization Complete. IV used: %h", $time, uut.ASCON_IV);
+
+        // Send Associated Data (AD) ---
+        @(negedge clk);
+        mess_valid = 1;
+        message = 64'h3832314e4f435341;; // 8 byte đầu: "ASCON128"
+        mess_last = 0;
+        wait(mess_pull); // Handshake chu kỳ 1
+        
+        @(negedge clk);
+        message = 64'h0000000000000001; 
+        mess_last = 1;
+        wait(mess_pull); // Handshake chu kỳ 2
+        
+        @(negedge clk)
+        mess_valid = 0; mess_last = 0;
+
+        wait(uut.state == 3); // Chờ chuyển sang MESSAGE (State 3)
+        $display("[%0t] AD Processing Done. State after DSEP: %h", $time, uut.S[4]);
+
+        // send Plaintext (P) 
+        @(negedge clk);
+        mess_valid = 1;
+        message = 64'h6373616f6c6c6568; // "helloasc"
+        wait(mess_pull);
+        
+        @(negedge clk);
+        message = 64'h0000000000000001; //  
+        mess_last = 1;
+        wait(mess_pull);
+        
+        @(negedge clk);
+        mess_valid = 0;
+
+        // Finalization
+        wait(done);
+        $display("[%0t] AEAD Process Finished!", $time);
+        $display("Generated Tag: %h", out_tag);
+        
+        #100 $finish;
     end
 
-    // Ascon_Core
-    Ascon_Core dut (
-        .clk            (clk),
-        .rst_n          (rst_n),
-        .start          (start),
-        .variant_128a   (variant_128a),
-        .has_ad         (has_ad),
-        .has_msg        (has_msg),
-        .decrypt_mode   (decrypt_mode),
-        .key            (key),
-        .nonce          (nonce),
-        .done           (done),
-        .cipher_in      (cipher_in),
-        .t_keep         (t_keep),
-        .data_valid     (data_valid),
-        .data_last      (data_last),
-        .data_ready     (data_ready),
-        .cipher_out     (cipher_out),
-        .tag_out        (tag_out),
-        .msg_valid      (msg_valid),
-        .tag_valid      (tag_valid)
-    );
-
-    // MONITOR
-
+    // Monitor Cipher Output
     always @(posedge clk) begin
-        if (msg_valid) begin
-            // Message (Ciphertext)
-            $display("[$time ns] CIPHERTEXT OUT: %h", cipher_out);
+        if (cipher_push && cipher_ready) begin
+            $display("[%0t] Output Cipher Chunk: %h", $time, cipher);
         end
-        if (tag_valid) begin
-            $display("[$time ns] TAG OUT: %h", tag_out);
-        end
-        if (done) begin
-            $display("[$time ns] --- ENCRYPTION COMPLETE ---");
-            $finish; 
-        end
-    end
-
-    // TEST SEQUENCE
-    initial begin
-
-        rst_n        = 0;
-        start        = 0;
-        data_valid   = 0;
-        data_last    = 0;
-        cipher_in      = 128'h0;
-
-        variant_128a = 1;       // ASCON-128a
-        decrypt_mode = 0;       // encryption
-        has_ad       = 1;       
-        has_msg      = 1;       
-        key          = 128'h0;  
-        nonce        = 128'h0;  
-
-        #22 rst_n = 1;         
-        
-        @(negedge clk);
-        $display("[$time ns] --- STARTING ASCON-128a ENCRYPTION ---");
-        start = 1;
-        @(negedge clk); 
-        start = 0;
-
-        // PHASE 1: SEND ASSOCIATED DATA (AD)
-        wait(data_ready == 1); // Wait FSM signals ready to receive data
-        @(negedge clk);        
-        
-        $display("[$time ns] DMA: Loading AD...");
-        cipher_in    = 128'h4141414141414141_4141414141414141; 
-        t_keep       = 16'hFFFF; 
-        data_valid = 1;
-        data_last  = 1; 
-
-        @(negedge clk);        
-        data_valid = 0; 
-        data_last  = 0;
-
-        // PHASE 2: SEND PLAINTEXT (MSG)
-        wait(data_ready == 1); 
-        @(negedge clk);       
-        
-        $display("[$time ns] DMA: Loading MSG...");
-        cipher_in    = 128'h48454C4C4F48454C_4C4F48454C4C4F48; 
-        t_keep       = 16'hFFFF; 
-        data_valid = 1;
-        data_last  = 1;
-        
-        @(negedge clk);
-        data_valid = 0;
-        data_last  = 0;
-
     end
 
 endmodule

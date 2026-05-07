@@ -13,6 +13,11 @@ package ascon_pkg;
 
     localparam DATA_WIDTH = 128;
 
+    // NIST LWC Standard IVs 
+    localparam logic [63:0] ASCON_IV  = 64'h00001000808c0001;
+    localparam ASCON_A = 12; // init and final rounds
+    localparam ASCON_B = 8;  // intermediate rounds
+    localparam RATE_CHUNKS = 2; 
 
     function automatic logic [63:0] ROR(
         input logic [63:0] x_in,
@@ -20,6 +25,8 @@ package ascon_pkg;
     );
         return (x_in >> n) | (x_in << (- n & 63));
     endfunction
+
+    typedef enum logic [2:0] { IDLE, INIT, ASSO_DATA, MESSAGE, TAG } state_t;
 
     // round constants
     localparam logic [7:0] RC [0:11] = '{
@@ -29,43 +36,17 @@ package ascon_pkg;
     };
 
 
-    // CONVERSION BIG -> LITTLE ENDIAN
-    function automatic logic [DATA_WIDTH-1:0] CONVERSION (
-        input logic [DATA_WIDTH-1:0] data_in
+    // CONVERSION LITTLE ENDIAN -> BIG ENDIAN
+    function automatic logic [63:0] CONVERSION (
+        input logic [63:0] data_in
     );
-        logic [DATA_WIDTH-1:0] out_data;
-        for (int i = 0; i < DATA_WIDTH/8; i++) begin
-            out_data[i*8 +: 8] = data_in[( (DATA_WIDTH/8) - 1 - i)*8 +: 8];
+        logic [63:0] out_data;
+        integer i;
+
+        for (i = 0; i < 8; i = i + 1) begin
+            out_data[63 - i*8 -: 8] = data_in[i*8 +: 8];
         end
         return out_data;
     endfunction 
     
-
-    // PADDING - LITTLE ENDIAN (Padding = 0x01)
-    // 128-bit (16 Bytes)
-    function automatic logic [DATA_WIDTH-1:0] PAD (
-        input logic [DATA_WIDTH-1:0] data_in,
-        input logic [DATA_WIDTH/8-1:0]  tkeep
-    );
-        logic [DATA_WIDTH-1:0] out_data;
-        out_data = data_in; 
-
-        for (int i = 0; i < DATA_WIDTH/8; i++) begin
-            if (tkeep[i] == 1'b0) begin
-                if (i == 0 || tkeep[i-1] == 1'b1) begin
-                    out_data[i*8 +: 8] = 8'h01; // Padding Little-Endian
-                end else begin
-                    out_data[i*8 +: 8] = 8'h00; 
-                end
-            end
-        end
-        return out_data;
-    endfunction
-    
-
-
-    // NIST LWC Standard IVs 
-    localparam logic [63:0] ASCON_128_IV  = 64'h00000800806C0001;
-    localparam logic [63:0] ASCON_128A_IV = 64'h00001000808C0001;
-
 endpackage

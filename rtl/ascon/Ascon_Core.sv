@@ -3,138 +3,157 @@
 // Engineer: Hung Nguyen
 // Create Date: 04/28/2026 09:34:00 AM
 // Module Name: Ascon_Core
-// Project Name: ASCON_128
-// Description: Top-level Wrapper connecting FSM, Datapath and Permutation
+// Project Name: Ascon-AEAD128
+// Description: Connecting FSM, Datapath and Permutation
 //////////////////////////////////////////////////////////////////////////////////
 
 module Ascon_Core import ascon_pkg::*; (
-    input  logic                    clk,
-    input  logic                    rst_n,
+    input  logic         clk,
+    input  logic         reset_n,
 
-    // CPU CONTROL (AXI4-Lite)
-    input  logic                    start,          // 1 = Start encryption/decryption
-    input  logic                    variant_128a,   // 0 = ASCON-128, 1 = ASCON-128a
-    input  logic                    has_ad,         // 1 = Has AD
-    input  logic                    has_msg,        // 1 = Has MSG
-    input  logic                    decrypt_mode,   // 0 = Encryption, 1 = Decryption
-    input  logic [127:0]            key,            
-    input  logic [127:0]            nonce,          
-    output logic                    done,          
+    input  logic         mess_valid,
+    output logic         mess_pull,
+    input  logic [63:0]  message,
+    input  logic         mess_last,
 
-    // DATA IN (From DMA / AXI4-Stream S_AXIS)
-    input  logic [DATA_WIDTH-1:0]   cipher_in,       
-    input  logic                    data_valid,     // DMA indicates valid data
-    input  logic                    data_last,      // Last data packet (TLAST)
-    input  logic [DATA_WIDTH/8-1:0] t_keep,         // Byte enable for padding
-    output logic                    data_ready,    
-
-    // DATA OUT (To DMA / AXI4-Stream M_AXIS)
-    output logic [DATA_WIDTH-1:0]   cipher_out,      
-    output logic [127:0]            tag_out,        
-    output logic                    msg_valid,      // Output data is valid
-    output logic                    tag_valid       // Output tag is valid
+    output logic         cipher_push,
+    input  logic         cipher_ready,
+    output logic [63:0]  cipher,
+    output logic         cipher_last,
+    
+    input  logic         start,
+    input  logic [127:0] key,
+    input  logic [127:0] nonce,
+    input  logic [1:0]   mode,
+    input  logic         skip_asso,
+    input  logic [127:0] in_tag,
+    output logic [127:0] out_tag,
+    output logic         success_tag,
+    output logic         done
 );
+    // RATE_CHUNKS = 2 - Ascon-AEAD128 
+    localparam int RC_MAX = 1; 
 
-    // INTERNAL IV GENERATION 
-    logic [63:0] internal_iv;
-    assign internal_iv = (variant_128a) ? ASCON_128A_IV : ASCON_128_IV;
-
-    // INTERNAL WIRES
-    // FSM <-> Datapath
-    logic state_update, sel_iv;
-    logic absorb_x0, absorb_x1;
-    logic absorb_pad_only;
-    logic is_full_block;
-    logic domain_sep;
-    logic xor_key_x12, xor_key_x23, xor_key_x34;
-
-    // FSM <-> Permutation
-    logic       perm_start;
-    logic       perm_done;
+    logic [0:4][63:0] S;
+    logic [0:4][63:0] perm_in, perm_out;
+    logic perm_start, perm_done;
     logic [3:0] perm_rounds;
+    logic cycle_cnt; 
+    logic cycle_done;
+    logic [2:0] state;
 
-    // Datapath <-> Permutation
-    logic [0:4][63:0] perm_x_in;
-    logic [0:4][63:0] perm_x_out;
+    assign cycle_done = (cycle_cnt == RC_MAX);
 
-    // INSTANTIATIONS
-
-    // FSM Controller
     Ascon_FSM u_fsm (
-        .clk             (clk),
-        .rst_n           (rst_n),
-        
-        // CPU & DMA Signals
-        .start           (start),
-        .variant_128a    (variant_128a),
-        .done            (done),
-        .data_valid      (data_valid),
-        .data_last       (data_last),
-        .data_ready      (data_ready),
-        .has_ad          (has_ad),
-        .has_msg         (has_msg),
-
-        // Permutation Control
-        .perm_start      (perm_start),
-        .perm_rounds     (perm_rounds),
-        .perm_done       (perm_done),
-        .is_full_block   (is_full_block),
-        // Datapath Control
-        .state_update    (state_update),
-        .sel_iv          (sel_iv),
-        .absorb_x0       (absorb_x0),
-        .absorb_x1       (absorb_x1),
-        .absorb_pad_only (absorb_pad_only),
-        .xor_key_x12     (xor_key_x12),
-        .xor_key_x23     (xor_key_x23),
-        .xor_key_x34     (xor_key_x34),
-        .domain_sep      (domain_sep),
-        .msg_valid       (msg_valid),
-        .tag_valid       (tag_valid)
+        .clk        (clk), 
+        .reset_n    (reset_n), 
+        .start      (start),
+        .mode       (mode), 
+        .skip_asso  (skip_asso),
+        .mess_valid (mess_valid), 
+        .mess_last  (mess_last),
+        .cycle_done (cycle_done), 
+        .perm_done  (perm_done),
+        .perm_start (perm_start), 
+        .perm_rounds(perm_rounds),
+        .mess_pull  (mess_pull), 
+        .cipher_push(cipher_push),
+        .done       (done), 
+        .state_out  (state)
     );
 
-    // Datapath 
-    Ascon_Datapath u_datapath (
-        .clk             (clk),
-        .rst_n           (rst_n),
-        
-        // Data In/Out
-        .cipher_in       (cipher_in),
-        .t_keep          (t_keep),
-        .key             (key),
-        .nonce           (nonce),
-        .iv              (internal_iv),
-        .cipher_out      (cipher_out),
-        .tag_out         (tag_out),
-        
-        // Control from FSM
-        .decrypt_mode    (decrypt_mode),
-        .state_update    (state_update),
-        .sel_iv          (sel_iv),
-        .absorb_x0       (absorb_x0),
-        .absorb_x1       (absorb_x1),
-        .absorb_pad_only (absorb_pad_only),         
-        .is_full_block   (is_full_block),
-        .domain_sep      (domain_sep),
-        .xor_key_x12     (xor_key_x12),
-        .xor_key_x23     (xor_key_x23),
-        .xor_key_x34     (xor_key_x34),
-        
-        // Permutation connections
-        .perm_done       (perm_done),
-        .perm_x_in       (perm_x_in),
-        .perm_x_out      (perm_x_out)
-    );
-
-    // Permutation Engine (Math Core)
     Permutation u_perm (
-        .clk             (clk),
-        .rst_n           (rst_n),
-        .start           (perm_start),
-        .num_rounds      (perm_rounds),
-        .x_in            (perm_x_in),
-        .x_out           (perm_x_out),
-        .done            (perm_done)
+        .clk        (clk), 
+        .rst_n      (reset_n), 
+        .start      (perm_start),
+        .num_rounds (perm_rounds), 
+        .x_in       (perm_in),
+        .x_out      (perm_out), 
+        .done       (perm_done)
     );
+
+    always_ff @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            S <= '0;
+            cycle_cnt <= 0;
+        end else begin
+            case (state)
+                IDLE: begin
+                    cycle_cnt <= 0;
+                    if (start) begin
+                        // IV Ascon-AEAD128 NIST SP 800-232 
+                        S[0] <= ASCON_IV; 
+                        S[1] <= key[127:64];  
+                        S[2] <= key[63:0];
+                        S[3] <= nonce[127:64]; 
+                        S[4] <= nonce[63:0];
+                    end
+                end
+
+                INIT: begin
+                    if (perm_done) begin
+                        // S = S ^ (0^192 || K)
+                        S <= perm_out; 
+                        S[3] <= perm_out[3] ^ key[127:64]; 
+                        S[4] <= perm_out[4] ^ key[63:0];
+                    end
+                end
+
+                ASSO_DATA: begin
+                    if (mess_valid && mess_pull) begin
+                        if (cycle_cnt == 0) S[0] <= S[0] ^ message;
+                        else                S[1] <= S[1] ^ message;
+                        
+                        if (cycle_done) cycle_cnt <= 0;
+                        else            cycle_cnt <= cycle_cnt + 1;
+                    end
+      
+                    if (perm_done) begin
+                        S <= perm_out;
+                        S[4] <= perm_out[4] ^ 64'h8000000000000000; // Domain Separation
+                    end
+                end
+
+
+                MESSAGE: begin
+                    if (mess_valid && mess_pull) begin
+                        if (cycle_cnt == 0) S[0] <= S[0] ^ message;
+                        else                S[1] <= S[1] ^ message;
+                        
+                        if (cycle_done) cycle_cnt <= 0;
+                        else            cycle_cnt <= cycle_cnt + 1;
+                    end
+      
+                    if (perm_done) begin
+                        S <= perm_out;
+                    end
+                end
+
+                TAG: begin
+                    if (perm_done) S <= perm_out;
+                end
+            endcase
+        end
+    end
+
+    // Cipher output XOR
+    assign cipher = (cycle_cnt == 0) ? (S[0] ^ message) : (S[1] ^ message);
+    assign cipher_last = mess_last;
+
+    always_comb begin
+        perm_in = S; 
+        if ((state == ASSO_DATA || state == MESSAGE) && mess_valid && mess_pull) begin
+            if (cycle_cnt == 0) perm_in[0] = S[0] ^ message;
+            else                perm_in[1] = S[1] ^ message;
+        end
+        else if (state == TAG && !perm_done) begin
+            perm_in[2] = S[2] ^ key[127:64];
+            perm_in[3] = S[3] ^ key[63:0];
+        end
+    end
+    
+    // Tag S[3] and S[4] XOR Key
+    assign out_tag = {perm_out[3] ^ key[127:64], perm_out[4] ^ key[63:0]};
+    assign success_tag = (mode == 2'b01) ? (out_tag == in_tag) : 1'b0;
 
 endmodule
