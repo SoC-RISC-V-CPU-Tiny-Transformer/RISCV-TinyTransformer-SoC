@@ -20,9 +20,9 @@ module Ascon_Core_tb;
     logic         start;
     logic [127:0] key;
     logic [127:0] nonce;
-    logic [1:0]   mode;
+    logic [1:0]   mode; 
     logic         skip_asso;
-    logic [127:0] in_tag;
+    logic [127:0] in_tag = 128'hb79bb3b7b59a7d21536cc1e027aaa4a9;
     logic [127:0] out_tag;
     logic         success_tag;
     logic         done;
@@ -34,10 +34,25 @@ module Ascon_Core_tb;
     // Unit Under Test (UUT)
     Ascon_Core uut (.*);
 
+    // TASK: Giả lập cơ chế Handshake chuẩn AXI-Stream
+    task send_data(input logic [63:0] data, input logic last);
+    begin
+        @(negedge clk);
+        mess_valid = 1;
+        message = data;
+        mess_last = last;
+        
+        @(posedge clk);
+        while (!mess_pull) begin
+            @(posedge clk); 
+        end
+    end
+    endtask
+
     initial begin
         // Setup
-        reset_n = 0; start = 0; mode = 2'b00; // Encrypt
-        key   = 128'h08090a0b0c0d0e0f_0001020304050607; // Little-endian order
+        reset_n = 0; start = 0; mode = 2'b01; // Decrypt
+        key   = 128'h08090a0b0c0d0e0f_0001020304050607; 
         nonce = 128'h08090a0b0c0d0e0f_0001020304050607;
         skip_asso = 1'b0;
         cipher_ready = 1'b1;
@@ -47,42 +62,23 @@ module Ascon_Core_tb;
         #10 start = 1; // Initialization
         #10 start = 0;
 
-        wait(uut.state == 2); // Chờ chuyển sang ASSO_DATA (State 2)
-        $display("[%0t] Initialization Complete. IV used: %h", $time, uut.ASCON_IV);
-
-        // Send Associated Data (AD) ---
-        @(negedge clk);
-        mess_valid = 1;
-        message = 64'h3832314e4f435341;; // 8 byte đầu: "ASCON128"
-        mess_last = 0;
-        wait(mess_pull); // Handshake chu kỳ 1
+        
+        // Send Associated Data (AD) 
+        send_data(64'h3832314e4f435341, 0); // "ASCON128"
+        send_data(64'h0000000000000001, 1); // Padding
         
         @(negedge clk);
-        message = 64'h0000000000000001; 
-        mess_last = 1;
-        wait(mess_pull); // Handshake chu kỳ 2
-        
-        @(negedge clk)
-        mess_valid = 0; mess_last = 0;
+        mess_valid = 0; mess_last = 0; 
 
-        wait(uut.state == 3); // Chờ chuyển sang MESSAGE (State 3)
-        $display("[%0t] AD Processing Done. State after DSEP: %h", $time, uut.S[4]);
+        // Send Plaintext 
+        // send_data(64'h6373616f6c6c6568, 0); // "helloasc"
+        // send_data(64'h0000000000000001, 1); // Padding
+        send_data(64'h766d747b615aafb2, 1); 
+        send_data(64'hd670720afc483196, 1); // Padding
+        @(negedge clk);
+        mess_valid = 0; mess_last = 0; 
 
-        // send Plaintext (P) 
-        @(negedge clk);
-        mess_valid = 1;
-        message = 64'h6373616f6c6c6568; // "helloasc"
-        wait(mess_pull);
-        
-        @(negedge clk);
-        message = 64'h0000000000000001; //  
-        mess_last = 1;
-        wait(mess_pull);
-        
-        @(negedge clk);
-        mess_valid = 0;
-
-        // Finalization
+        // Finalization 
         wait(done);
         $display("[%0t] AEAD Process Finished!", $time);
         $display("Generated Tag: %h", out_tag);

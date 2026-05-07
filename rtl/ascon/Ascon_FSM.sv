@@ -24,6 +24,7 @@ module Ascon_FSM import ascon_pkg::*; (
 
     output logic mess_pull,
     output logic cipher_push,
+    input  logic cipher_ready,
     output logic done,
     output logic [2:0] state_out
 );
@@ -31,16 +32,23 @@ module Ascon_FSM import ascon_pkg::*; (
     assign state_out = state;
 
     logic saved_mess_last;
+    logic is_permuting;
 
     always_ff @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             saved_mess_last <= 1'b0;
+            is_permuting    <= 1'b0;
         end 
-        else if (mess_valid && mess_pull) begin
-            saved_mess_last <= mess_last;
-        end
-        else if (state == IDLE) begin
-            saved_mess_last <= 1'b0;
+        else begin
+            if (mess_valid && mess_pull) begin
+                saved_mess_last <= mess_last;
+            end
+            if (state == IDLE) begin
+                saved_mess_last <= 1'b0;
+            end
+
+            if (perm_start) is_permuting <= 1'b1;
+            else if (perm_done) is_permuting <= 1'b0;
         end
     end
 
@@ -71,28 +79,41 @@ module Ascon_FSM import ascon_pkg::*; (
             end
 
             ASSO_DATA: begin
-                mess_pull = 1;
-                if (mess_valid) begin
-                    if (cycle_done) begin
-                        perm_start = 1;
+                if (is_permuting) begin
+                    mess_pull = 0; 
+                end 
+                else begin
+                    mess_pull = mess_valid; 
+                    if (mess_valid && cycle_done) begin
+                        perm_start = 1; 
                     end
                 end
-                if (perm_done) begin
-                    perm_start = 0;
-                    if (saved_mess_last) next = MESSAGE;
+                
+                if (perm_done && saved_mess_last) begin
+                    next = MESSAGE;
                 end
             end
 
             MESSAGE: begin
-                mess_pull = 1;
-                if (mess_valid) begin
-                    cipher_push = 1; 
-                    if (cycle_done) begin
-                        if (mess_last) begin
-                            next = TAG;
+                if (is_permuting) begin
+                    mess_pull = 0;
+                    cipher_push = 0;
+                end 
+                else begin
+
+                    // Handshake 
+                    cipher_push = mess_valid; 
+                    mess_pull   = cipher_ready;
+
+                    if (mess_valid && cipher_ready) begin
+                        if (cycle_done) begin
+                            if (mess_last || saved_mess_last) begin
+                                next = TAG;
+                            end
+                            else begin
+                                perm_start = 1;
+                            end
                         end
-                        else 
-                            perm_start = 1;
                     end
                 end
             end

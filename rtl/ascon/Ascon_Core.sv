@@ -58,6 +58,7 @@ module Ascon_Core import ascon_pkg::*; (
         .perm_rounds(perm_rounds),
         .mess_pull  (mess_pull), 
         .cipher_push(cipher_push),
+        .cipher_ready(cipher_ready),
         .done       (done), 
         .state_out  (state)
     );
@@ -117,8 +118,16 @@ module Ascon_Core import ascon_pkg::*; (
 
                 MESSAGE: begin
                     if (mess_valid && mess_pull) begin
-                        if (cycle_cnt == 0) S[0] <= S[0] ^ message;
-                        else                S[1] <= S[1] ^ message;
+                        if (mode == 2'b01) begin 
+                            // MODE: DECRYPT 
+                            if (cycle_cnt == 0) S[0] <= message;
+                            else                S[1] <= message;
+                        end 
+                        else begin 
+                            // MODE: ENCRYPT 
+                            if (cycle_cnt == 0) S[0] <= S[0] ^ message;
+                            else                S[1] <= S[1] ^ message;
+                        end
                         
                         if (cycle_done) cycle_cnt <= 0;
                         else            cycle_cnt <= cycle_cnt + 1;
@@ -142,9 +151,24 @@ module Ascon_Core import ascon_pkg::*; (
 
     always_comb begin
         perm_in = S; 
-        if ((state == ASSO_DATA || state == MESSAGE) && mess_valid && mess_pull) begin
+
+        if (state == ASSO_DATA && mess_valid && mess_pull) begin
             if (cycle_cnt == 0) perm_in[0] = S[0] ^ message;
             else                perm_in[1] = S[1] ^ message;
+        end
+
+        else if (state == MESSAGE && mess_valid && mess_pull) begin
+            if (mode == 2'b01) begin 
+                // MODE: DECRYPT 
+                if (cycle_cnt == 0) perm_in[0] = message;
+                else                perm_in[1] = message;
+            end 
+            else begin 
+                // MODE: ENCRYPT 
+                if (cycle_cnt == 0) perm_in[0] = S[0] ^ message;
+                else                perm_in[1] = S[1] ^ message;
+            end
+            
         end
         else if (state == TAG && !perm_done) begin
             perm_in[2] = S[2] ^ key[127:64];
@@ -154,6 +178,6 @@ module Ascon_Core import ascon_pkg::*; (
     
     // Tag S[3] and S[4] XOR Key
     assign out_tag = {perm_out[3] ^ key[127:64], perm_out[4] ^ key[63:0]};
-    assign success_tag = (mode == 2'b01) ? (out_tag == in_tag) : 1'b0;
+    assign success_tag = (mode == 2'b01) ? (out_tag == in_tag) : 1'b1;
 
 endmodule
