@@ -26,10 +26,10 @@ module Permutation import ascon_pkg::*; (
 
     state_t state, next;
 
-    logic [0:4][63:0]        data_in, round_out;
-    logic [7:0]              round_const;
+    logic [0:4][63:0] data_in, round_out;
+    logic [7:0]       round_const;
     
-    logic [3:0] round_cnt;
+    logic [3:0]       round_cnt;
 
     Round round_engine(
         .x_in(data_in), 
@@ -52,10 +52,11 @@ module Permutation import ascon_pkg::*; (
         next = state;
         case (state)
             IDLE: if (start)        
-                    next = RUN;
+                     next = RUN;
             RUN : if (round_cnt == num_rounds-1) 
-                    next = DONE;
-            DONE:   next = IDLE;
+                     next = DONE;
+            DONE:    next = IDLE;
+            default: next = IDLE;
         endcase
     end
 

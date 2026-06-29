@@ -52,7 +52,6 @@ module Ascon_Core import ascon_pkg::*; (
         .clk        (clk), 
         .reset_n    (reset_n), 
         .start      (start),
-        .mode       (mode), 
         .skip_asso  (skip_asso),
         .mess_valid (mess_valid), 
         .mess_last  (mess_last),
@@ -103,7 +102,10 @@ module Ascon_Core import ascon_pkg::*; (
                         // S = S ^ (0^192 || K)
                         S <= perm_out; 
                         S[3] <= perm_out[3] ^ key[127:64]; 
-                        S[4] <= perm_out[4] ^ key[63:0];
+                        if (do_domain_sep)
+                            S[4] <= (perm_out[4] ^ key[63:0]) ^ 64'h8000000000000000;
+                        else
+                            S[4] <= perm_out[4] ^ key[63:0];
                     end
                 end
 

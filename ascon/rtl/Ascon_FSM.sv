@@ -1,4 +1,3 @@
-`timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
 // Engineer: Hung Nguyen
 // Create Date: 04/27/2026 07:55:10 PM
@@ -7,14 +6,12 @@
 // Description: 
 //////////////////////////////////////////////////////////////////////////////////
 
-`timescale 1ns / 1ps
 
 module Ascon_FSM import ascon_pkg::*; (
     input  logic clk,
     input  logic reset_n,
 
     input  logic start,
-    input  logic [1:0] mode,      // 00: Encrypt, 01: Decrypt
     input  logic skip_asso,
     input  logic mess_valid,
     input  logic mess_last,
@@ -103,12 +100,21 @@ module Ascon_FSM import ascon_pkg::*; (
                 
                 perm_rounds = ASCON_A; 
                 if (perm_done) begin
-                    next = skip_asso ? MESSAGE : ASSO_DATA;
+                    if (skip_asso) begin
+                        do_domain_sep = 1; 
+                        next = MESSAGE;
+                    end else begin
+                        next = ASSO_DATA;
+                    end
                 end
             end
 
             ASSO_DATA: begin
-                if (is_permuting) begin
+                if (skip_asso) begin
+                    do_domain_sep = 1;
+                    next = MESSAGE;
+                end 
+                else if (is_permuting) begin
                     mess_pull = 0; 
                 end 
                 else if (pad_phase) begin 
@@ -171,6 +177,7 @@ module Ascon_FSM import ascon_pkg::*; (
                     next = IDLE;
                 end
             end
+            default: next = IDLE;
         endcase
     end
 endmodule

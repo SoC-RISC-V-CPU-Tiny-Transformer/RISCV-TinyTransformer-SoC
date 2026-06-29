@@ -35,6 +35,15 @@ package ascon_pkg;
         8'h78, 8'h69, 8'h5a, 8'h4b
     };
 
+    // PAD function 
+    function automatic logic [63:0] PAD (
+        input logic [63:0] data_in
+    );
+        logic [63:0] padded_data;
+        padded_data = data_in ^ 64'h0000000000000001; // XOR with 1 to indicate the end of the message,, little-endian format
+        return padded_data;
+    endfunction
+
 
     // CONVERSION LITTLE ENDIAN -> BIG ENDIAN
     function automatic logic [63:0] CONVERSION (
