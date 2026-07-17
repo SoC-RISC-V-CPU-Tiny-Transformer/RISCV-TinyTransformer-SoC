@@ -38,7 +38,8 @@ module I2C_Top (
         .i_data_read    (data_read),
         .i_valid_out    (valid_out),
         .i_busy         (busy),
-        .i_nack         (nack)
+        .i_nack         (nack),
+        .i_req_data_chunk (req_data_chunk)
     );
 
     // Instantiate I2C Core FSM
