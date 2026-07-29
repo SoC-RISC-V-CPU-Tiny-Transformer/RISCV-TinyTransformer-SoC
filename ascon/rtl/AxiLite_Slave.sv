@@ -17,6 +17,7 @@ module AxiLite_Slave
     input  logic         s_axi_awvalid,
     output logic         s_axi_awready,
     input  logic [31:0]  s_axi_wdata,
+    input  logic [3:0]   s_axi_wstrb,
     input  logic         s_axi_wvalid,
     output logic         s_axi_wready,
     output logic [1:0]   s_axi_bresp,
